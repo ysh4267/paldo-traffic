@@ -12,7 +12,6 @@ export const PALETTES = {
     label: '#8a8476', labelStrong: '#55514a', halo: 'rgba(246,241,227,0.92)', seaLabel: '#7aa6c8',
     xRoad: '#cdc6b4', nRoad: '#dad4c4', rRoad: '#e3ddce', closed: '#e3ddcd', plan: '#8e6fc9', ferry: '#7aa6c8', ferryOff: 'rgba(122,166,200,0.35)',
     laneMark: 'rgba(255,255,255,0.9)', center: '#b3ac9a', grass: '#d5e6c8', lot: '#e6e0d0', stallLine: '#fbf8ef',
-    bedEmpty: '#a8a397', bedLine: 'rgba(60,55,45,0.28)', tire: '#2f2d29', glass: '#27343d', shadow: 'rgba(50,42,28,0.2)',
     ink: '#2a2a28', station: '#ffffff', core: '#fbf8ef', mute: '#b9b3a3', crowd: 'rgba(42,42,40,0.3)',
   },
   night: {
@@ -21,7 +20,6 @@ export const PALETTES = {
     label: '#8d8f8c', labelStrong: '#cfcdc6', halo: 'rgba(38,43,48,0.92)', seaLabel: '#4f7390',
     xRoad: '#4a4f54', nRoad: '#3d4247', rRoad: '#363b40', closed: '#2f3439', plan: '#a98be0', ferry: '#4f7390', ferryOff: 'rgba(79,115,144,0.35)',
     laneMark: 'rgba(255,255,255,0.45)', center: '#6a6f73', grass: '#33483a', lot: '#32373c', stallLine: '#50555a',
-    bedEmpty: '#6f7276', bedLine: 'rgba(0,0,0,0.3)', tire: '#101214', glass: '#9fb6c4', shadow: 'rgba(0,0,0,0.35)',
     ink: '#f1eee6', station: '#262b30', core: '#262b30', mute: '#6d6a62', crowd: 'rgba(241,238,230,0.26)',
   },
 };
@@ -31,27 +29,19 @@ const ACCENT = '#3f7fb8';
 const RED = '#d9412b';
 const ORANGE = '#e08a1e';
 const KM_CLOSE = 0.09;    // 이보다 가까우면 실제 도로처럼 차로를 그린다
-const KM_TRUCK = 0.07;    // 이보다 가까우면 트럭을 자세히 그린다
+const KM_TRUCK = 0.05;    // 이보다 가까우면 트럭을 자세히 그린다
 const KM_MID = 0.42;      // 이보다 멀면 트럭을 점으로 그린다
 const EASE_W = 9;         // 표시 위치가 실제 위치를 따라가는 빠르기. 낮을수록 출발과 정지가 느긋하다
 const GOODS_ORDER = Object.keys(GOODS);
-// 위에서 본 트럭의 치수(km). fo: 앞범퍼에서 앞바퀴까지, wb: 앞뒤 바퀴 사이, cab: 운전석 길이, wb2: 트레일러 연결부에서 뒷바퀴까지
+// 트럭 축의 위치(km). 그림이 아니라 움직임에 쓴다. fo: 앞끝에서 앞축까지, wb: 앞뒤 축 사이, wb2: 트레일러 연결부에서 뒤축까지
 const TRUCK_GEO = {
-  hauler: { fo: 0.09, wb: 0.42, cab: 0.26 },
-  cargo: { fo: 0.11, wb: 0.6, cab: 0.3 },
-  express: { fo: 0.11, wb: 0.58, cab: 0.3 },
-  trailer: { fo: 0.1, wb: 0.34, cab: 0.4, wb2: 0.98 },
+  hauler: { fo: 0.09, wb: 0.42 },
+  cargo: { fo: 0.11, wb: 0.6 },
+  express: { fo: 0.11, wb: 0.58 },
+  trailer: { fo: 0.1, wb: 0.34, wb2: 0.98 },
 };
 const NODE_TOOLS = new Set(['yield', 'stop', 'signal', 'roundabout', 'interchange', 'remove']);
 const KM_LOT = 0.3;       // 이보다 가까우면 주차장을 그린다
-
-function shade(hex, amt) {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (v) => Math.max(0, Math.min(255, Math.round(v * (1 + amt))));
-  return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
-}
-const CAB_COLOR = {};
-for (const id of GOODS_ORDER) CAB_COLOR[GOODS[id].color] = shade(GOODS[id].color, -0.26);
 
 function ringPath(path, flat) {
   path.moveTo(flat[0], flat[1]);
@@ -766,7 +756,7 @@ export class Renderer {
   // 막히는 방향에만 얇은 경고선을 긋는다
   drawCongestion(ctx) {
     const cam = this.cam, net = this.game.net, k = cam.k;
-    ctx.lineCap = 'butt';
+    ctx.lineCap = 'round';
     for (const e of net.edges) {
       if (e.road.kind === 'f' || !e.road.open) continue;
       const c = e.cong;
@@ -858,7 +848,7 @@ export class Renderer {
       for (const lane of traffic.activeLanes) for (const v of lane.veh) dot(v);
       for (const c of traffic.activeConns) for (const v of c.veh) dot(v);
       ctx.lineCap = 'round';
-      ctx.lineWidth = 3 * k;
+      ctx.lineWidth = 3.2 * k;
       for (const [c, a] of dots) {
         ctx.strokeStyle = c;
         ctx.beginPath();
@@ -867,19 +857,13 @@ export class Renderer {
       }
       return;
     }
-    // 중간 축척은 같은 색끼리 묶어 한 번에 그린다
-    const beds = new Map(), cabs = new Map();
-    const push = (map, color, w, x0, y0, x1, y1) => {
-      const key = color + w.toFixed(3);
-      let q = map.get(key);
-      if (!q) { q = { color, w, a: [] }; map.set(key, q); }
-      q.a.push(x0, y0, x1, y1);
-    };
+    // 중간 축척은 같은 색과 폭끼리 묶어 한 번에 그린다
+    const buckets = new Map();
     const emit = (v, f) => {
       const g = TRUCK_GEO[v.model.id];
       const color = GOODS[v.route.goods].color;
       const L = v.lot;
-      const roadZ = detail ? 1 : Math.max(1, (8.5 * k) / v.len);
+      const roadZ = this.truckLen(v, k) / v.len;
       const z = roadZ + (1 - roadZ) * f;
       const lag = this.easeLag(v);
       let seg, p, reverse = false;
@@ -887,7 +871,7 @@ export class Renderer {
         seg = v.lane || v.conn;
         p = v.s - lag - g.fo * z;
       } else if (L.phase === 'back') {
-        // 후진: 맨 뒤 바퀴가 길을 따라가고 앞쪽은 끌려온다
+        // 후진: 맨 뒤 축이 길을 따라가고 앞쪽은 끌려온다
         seg = L.seg;
         p = L.s - lag - v.len + g.fo + g.wb + (g.wb2 || 0);
         reverse = true;
@@ -898,29 +882,31 @@ export class Renderer {
       traffic.poseOn(v, seg, p, front, !L && v.lane ? v.seg : undefined);
       if (!inView(front[0], front[1])) return;
       this.stepAxles(v, g, z, front[0], front[1], reverse, seg, p);
-      if (detail) { this.drawTruckTop(ctx, v, g, z, color); return; }
-      // 앞바퀴와 뒷바퀴로 몸체 방향을 정한다
-      const roadW = Math.max(v.model.width, (3.4 + Math.min(1, v.model.cap * 0.06)) * k);
+      if (detail) { this.drawTruckDetail(ctx, v, g, z, color); return; }
+      const roadW = Math.max(v.model.width, (5.4 + Math.min(1.8, v.model.cap * 0.12)) * k);
       const w = L ? roadW + (Math.min(roadW, STALL_W * 0.72) - roadW) * f : roadW;
+      // 앞끝, 꺾이는 곳, 뒤끝. 트레일러만 가운데에서 꺾인다
       let ux = v.a0x - v.a1x, uy = v.a0y - v.a1y;
       let l = Math.hypot(ux, uy) || 1;
       ux /= l; uy /= l;
       const fx = v.a0x + ux * g.fo * z, fy = v.a0y + uy * g.fo * z;
-      const bedColor = v.goods ? color : pal.bedEmpty;
+      let hx, hy, rx, ry;
       if (g.wb2) {
         let vx = v.a1x - v.a2x, vy = v.a1y - v.a2y;
         l = Math.hypot(vx, vy) || 1;
         vx /= l; vy /= l;
         const ro = (v.len - g.fo - g.wb - g.wb2) * z;
-        push(beds, bedColor, w, v.a1x + vx * 0.1 * z, v.a1y + vy * 0.1 * z, v.a2x - vx * ro, v.a2y - vy * ro);
-        push(cabs, CAB_COLOR[color], w, fx, fy, v.a1x, v.a1y);
+        hx = v.a1x; hy = v.a1y;
+        rx = v.a2x - vx * ro; ry = v.a2y - vy * ro;
       } else {
         const ro = (v.len - g.fo - g.wb) * z;
-        const cx = fx - ux * g.cab * z, cy = fy - uy * g.cab * z;
-        const gap = Math.min(0.03 * z, 0.5 * k);
-        push(beds, bedColor, w, cx - ux * gap, cy - uy * gap, v.a1x - ux * ro, v.a1y - uy * ro);
-        push(cabs, CAB_COLOR[color], w, fx, fy, cx, cy);
+        rx = v.a1x - ux * ro; ry = v.a1y - uy * ro;
+        hx = (fx + rx) / 2; hy = (fy + ry) / 2;
       }
+      const key = color + w.toFixed(3);
+      let q = buckets.get(key);
+      if (!q) { q = { color, w, full: [], empty: [] }; buckets.set(key, q); }
+      (v.goods ? q.full : q.empty).push(fx, fy, hx, hy, rx, ry);
     };
     for (const lane of traffic.activeLanes) {
       const r = lane.edge.road;
@@ -944,18 +930,49 @@ export class Renderer {
         emit(v, f);
       }
     }
+    // 납작한 사각형. 싣고 가면 꽉 채우고, 빈 차는 속을 비운다
+    // ext만큼 양 끝을 늘이거나 줄여 앞끝, 꺾이는 곳, 뒤끝을 잇는다
+    const trace = (a, i, ext) => {
+      const fx = a[i], fy = a[i + 1], hx = a[i + 2], hy = a[i + 3], rx = a[i + 4], ry = a[i + 5];
+      const lf = Math.hypot(fx - hx, fy - hy) || 1, lr = Math.hypot(rx - hx, ry - hy) || 1;
+      ctx.moveTo(fx + ((fx - hx) / lf) * ext, fy + ((fy - hy) / lf) * ext);
+      ctx.lineTo(hx, hy);
+      ctx.lineTo(rx + ((rx - hx) / lr) * ext, ry + ((ry - hy) / lr) * ext);
+    };
     ctx.lineCap = 'butt';
-    for (const map of [beds, cabs]) {
-      for (const q of map.values()) {
-        ctx.strokeStyle = q.color;
-        ctx.lineWidth = q.w;
-        ctx.beginPath();
-        const a = q.a;
-        for (let i = 0; i < a.length; i += 4) { ctx.moveTo(a[i], a[i + 1]); ctx.lineTo(a[i + 2], a[i + 3]); }
-        ctx.stroke();
-      }
+    const join = ctx.lineJoin;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = pal.core;
+    const rim = 1.1 * k;
+    for (const q of buckets.values()) {
+      ctx.lineWidth = q.w + rim * 2;
+      ctx.beginPath();
+      for (const a of [q.full, q.empty]) for (let i = 0; i < a.length; i += 6) trace(a, i, rim);
+      ctx.stroke();
     }
+    for (const q of buckets.values()) {
+      ctx.strokeStyle = q.color;
+      ctx.lineWidth = q.w;
+      ctx.beginPath();
+      for (const a of [q.full, q.empty]) for (let i = 0; i < a.length; i += 6) trace(a, i, 0);
+      ctx.stroke();
+    }
+    const edge = 1.3 * k;
+    ctx.strokeStyle = pal.core;
+    for (const q of buckets.values()) {
+      const a = q.empty;
+      if (!a.length || q.w <= edge * 2) continue;
+      ctx.lineWidth = q.w - edge * 2;
+      ctx.beginPath();
+      for (let i = 0; i < a.length; i += 6) trace(a, i, -edge);
+      ctx.stroke();
+    }
+    ctx.lineJoin = join;
     ctx.lineCap = 'round';
+  }
+
+  truckLen(v, k) {
+    return Math.max(v.len, (8 + v.len * 3) * k);
   }
 
   // 앞바퀴가 길을 따라가면 뒷바퀴는 끌려온다 (후진이면 거꾸로). 그래서 회전 중심이 뒷바퀴 쪽에 생기고
@@ -983,7 +1000,6 @@ export class Renderer {
       v.aT = t;
       v.aRev = reverse;
       v.aErrX = 0; v.aErrY = 0;
-      v.steer = 0;
       return;
     }
     v.aT = t;
@@ -1000,7 +1016,6 @@ export class Renderer {
       if (Math.abs(v.aErrX) + Math.abs(v.aErrY) < 0.001) { v.aErrX = 0; v.aErrY = 0; }
       lx += v.aErrX; ly += v.aErrY;
     }
-    const px = v.a0x, py = v.a0y;
     const tow = (ax, ay, bx, by, dist, out) => {
       const dx = bx - ax, dy = by - ay;
       const l = Math.hypot(dx, dy) || 1;
@@ -1024,138 +1039,63 @@ export class Renderer {
       tow(v.a1x, v.a1y, v.a0x, v.a0y, wb, q);
       v.a0x = q[0]; v.a0y = q[1];
     }
-    // 앞바퀴가 움직인 방향과 차 방향의 차이가 곧 조향각이다
-    const mx = v.a0x - px, my = v.a0y - py;
-    if (mx * mx + my * my > 1e-6) {
-      const hx = v.a0x - v.a1x, hy = v.a0y - v.a1y;
-      let d = Math.atan2(hx * my - hy * mx, hx * mx + hy * my);
-      if (reverse) d = d > 0 ? d - Math.PI : d + Math.PI;
-      d = Math.max(-0.6, Math.min(0.6, d));
-      v.steer += (d - (v.steer || 0)) * 0.25;
-    }
   }
 
-  // 위에서 내려다본 트럭 한 대
-  drawTruckTop(ctx, v, g, z, color) {
-    const pal = this.pal, k = this.cam.k, m = v.model;
-    const W = Math.max(m.width, 3.6 * k);
-    const cabColor = CAB_COLOR[color];
-    const loaded = !!v.goods;
+  // 화물칸과 운전석 두 덩어리로 그린다. 트레일러는 그 사이에서 꺾인다
+  drawTruckDetail(ctx, v, g, z, color) {
+    const k = this.cam.k, m = v.model;
+    const W = Math.max(m.width * 1.1, 4.4 * k);
+    const L = v.len * z;
     let ux = v.a0x - v.a1x, uy = v.a0y - v.a1y;
     let l = Math.hypot(ux, uy) || 1;
     ux /= l; uy /= l;
-    const box = (x, y, w, h, rad) => { this.roundRect(ctx, x, y, w, h, Math.min(rad, Math.abs(w) / 2, Math.abs(h) / 2)); };
-    // 바퀴 한 쌍. x는 차체 앞뒤 위치, a는 조향각
-    const wheels = (x, a) => {
-      const tw = W * 0.2, tl = Math.min(0.13, W * 0.5);
-      for (const side of [-1, 1]) {
-        ctx.save();
-        ctx.translate(x, (side * W) / 2);
-        if (a) ctx.rotate(a);
-        ctx.fillRect(-tl / 2, -tw / 2, tl, tw);
-        ctx.restore();
-      }
-    };
-    // 적재함. 실으면 화물 색 짐이 덮이고 비면 바닥 판자가 보인다
-    const bed = (L) => {
-      box(0, -W / 2, L, W, W * 0.1);
-      ctx.fillStyle = loaded ? color : pal.bedEmpty;
-      ctx.fill();
-      const px = 1 / this.dpr * k * 1.2;
-      ctx.fillStyle = pal.bedLine;
-      if (loaded) {
-        // 짐을 덮은 천의 주름
-        const step = Math.max(L / 9, 2.4 * k);
-        for (let x = step; x < L - step * 0.5; x += step) ctx.fillRect(x, -W / 2, px, W);
-        ctx.fillStyle = 'rgba(255,255,255,0.14)';
-        ctx.fillRect(0, -W * 0.16, L, W * 0.32);
-      } else {
-        const step = Math.max(W * 0.28, 1.8 * k);
-        for (let y = -W / 2 + step; y < W / 2 - step * 0.4; y += step) ctx.fillRect(0, y, L, px);
-        ctx.strokeStyle = cabColor;
-        ctx.lineWidth = Math.min(W * 0.1, 1.1 * k);
-        box(0, -W / 2, L, W, W * 0.1);
-        ctx.stroke();
-      }
-    };
-    const cab = (L) => {
-      box(0, -W / 2, L, W, W * 0.24);
-      ctx.fillStyle = cabColor;
-      ctx.fill();
-      // 앞유리와 지붕
-      const gl = L * 0.3;
-      ctx.fillStyle = pal.glass;
-      box(L * 0.56, -W * 0.38, gl, W * 0.76, W * 0.08);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.13)';
-      ctx.fillRect(L * 0.1, -W * 0.3, L * 0.38, W * 0.6);
-      // 사이드미러
-      ctx.fillStyle = cabColor;
-      const mw = W * 0.13;
-      ctx.fillRect(L * 0.6, -W / 2 - mw, L * 0.08, mw);
-      ctx.fillRect(L * 0.6, W / 2, L * 0.08, mw);
-    };
-    const lights = (rearX, braking, backing) => {
-      if (!braking && !backing) return;
-      ctx.fillStyle = backing ? '#fff6d8' : '#e8402f';
-      const s = W * 0.2;
-      ctx.fillRect(rearX - s * 0.25, -W / 2 + s * 0.2, s * 0.5, s);
-      ctx.fillRect(rearX - s * 0.25, W / 2 - s * 1.2, s * 0.5, s);
-    };
-    const shadowOff = Math.min(0.035, 1.4 * k);
-    const backing = v.lot && v.lot.phase === 'back' && v.lot.go;
-    const braking = v.lot ? v.lot.active && !backing && (v.a < -0.6 || v.v < 0.05) : v.a < -0.6 || v.v < 0.05;
+    const fx = v.a0x + ux * g.fo * z, fy = v.a0y + uy * g.fo * z;
+    // 화물칸의 방향과 뒤끝
+    let dx = ux, dy = uy, rx, ry;
     if (g.wb2) {
-      // 트랙터 + 트레일러: 연결부에서 꺾인다
-      let vx = v.a1x - v.a2x, vy = v.a1y - v.a2y;
-      l = Math.hypot(vx, vy) || 1;
-      vx /= l; vy /= l;
+      dx = v.a1x - v.a2x; dy = v.a1y - v.a2y;
+      l = Math.hypot(dx, dy) || 1;
+      dx /= l; dy /= l;
       const ro = (v.len - g.fo - g.wb - g.wb2) * z;
-      const tL = g.wb2 * z + ro + 0.1 * z;
-      const rx = v.a2x - vx * ro, ry = v.a2y - vy * ro;
-      const fx = v.a0x + ux * g.fo * z, fy = v.a0y + uy * g.fo * z;
-      const tractorL = (g.fo + g.wb + 0.06) * z;
-      const tx0 = fx - ux * tractorL, ty0 = fy - uy * tractorL;
-      // 그림자
-      ctx.fillStyle = pal.shadow;
-      ctx.save(); ctx.transform(vx, vy, -vy, vx, rx + shadowOff, ry + shadowOff); box(0, -W / 2, tL, W, W * 0.1); ctx.fill(); ctx.restore();
-      ctx.save(); ctx.transform(ux, uy, -uy, ux, tx0 + shadowOff, ty0 + shadowOff); box(0, -W / 2, tractorL, W, W * 0.2); ctx.fill(); ctx.restore();
-      // 트랙터 뒤판과 바퀴
-      ctx.save();
-      ctx.transform(ux, uy, -uy, ux, tx0, ty0);
-      ctx.fillStyle = pal.tire;
-      wheels(tractorL - g.fo * z, v.steer || 0);
-      wheels(0.06 * z, 0);
-      ctx.fillRect(0, -W * 0.34, tractorL - g.cab * z, W * 0.68);
-      ctx.save(); ctx.translate(tractorL - g.cab * z, 0); cab(g.cab * z); ctx.restore();
-      ctx.restore();
-      // 트레일러
-      ctx.save();
-      ctx.transform(vx, vy, -vy, vx, rx, ry);
-      ctx.fillStyle = pal.tire;
-      wheels(ro, 0);
-      wheels(ro + Math.min(0.16, W * 0.6), 0);
-      bed(tL);
-      lights(0, braking, backing);
-      ctx.restore();
-      return;
+      rx = v.a2x - dx * ro; ry = v.a2y - dy * ro;
+    } else {
+      rx = fx - ux * L; ry = fy - uy * L;
     }
-    const ro = (v.len - g.fo - g.wb) * z;
-    const L = v.len * z;
-    const rx = v.a1x - ux * ro, ry = v.a1y - uy * ro;
-    ctx.fillStyle = pal.shadow;
-    ctx.save(); ctx.transform(ux, uy, -uy, ux, rx + shadowOff, ry + shadowOff); box(0, -W / 2, L, W, W * 0.2); ctx.fill(); ctx.restore();
+    const cab = Math.min(W * 0.85, L * 0.26);
+    const gap = Math.min(0.03, 1 * k);
+    const boxL = L - cab - gap;
+    const rad = Math.min(W * 0.22, boxL / 2);
     ctx.save();
-    ctx.transform(ux, uy, -uy, ux, rx, ry);
-    ctx.fillStyle = pal.tire;
-    wheels(ro, 0);
-    wheels(L - g.fo * z, v.steer || 0);
-    const cabL = g.cab * z, gap = Math.min(0.025 * z, W * 0.12);
-    bed(L - cabL - gap);
-    ctx.fillStyle = pal.tire;
-    ctx.fillRect(L - cabL - gap, -W * 0.3, gap, W * 0.6);
-    ctx.save(); ctx.translate(L - cabL, 0); cab(cabL); ctx.restore();
-    lights(0, braking, backing);
+    ctx.transform(dx, dy, -dy, dx, rx, ry);
+    this.roundRect(ctx, 0, -W / 2, boxL, W, rad);
+    if (v.goods) {
+      ctx.fillStyle = color;
+      ctx.fill();
+      // 실은 만큼 흰 점을 찍는다
+      const cap = m.cap;
+      const slots = cap >= 25 ? 6 : cap >= 8 ? 4 : cap >= 5 ? 3 : 2;
+      const pip = Math.min(W * 0.34, (boxL / slots) * 0.56);
+      if (pip / k > 1.6) {
+        const n = Math.max(1, Math.round((slots * v.cargo) / this.game.truckCap(m)));
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < Math.min(n, slots); i++) {
+          const x = ((i + 0.5) / slots) * boxL;
+          ctx.fillRect(x - pip / 2, -pip / 2, pip, pip);
+        }
+      }
+    } else {
+      ctx.fillStyle = this.pal.core;
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.min(W * 0.18, 1.1 * k);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.transform(ux, uy, -uy, ux, fx - ux * cab, fy - uy * cab);
+    this.roundRect(ctx, 0, -W / 2, cab, W, Math.min(W * 0.22, cab / 2));
+    ctx.fillStyle = color;
+    ctx.fill();
     ctx.restore();
   }
 
@@ -1330,10 +1270,10 @@ export class Renderer {
   }
   // 교차로를 고를 때 두르는 고리의 반지름 (화면 픽셀)
   nodeRing(n) { return Math.max(n.R / this.cam.k + 5, 11); }
-  // 도로 강조는 양 끝 교차로의 고리 바깥에서 끊는다. 교차로와 도로가 서로 겹치면 어디까지가 도로인지 알아보기 힘들다
-  roadMarkPath(r) {
+  // 도로 강조는 양 끝 교차로의 고리 바깥에서 둥글게 끝낸다. 교차로와 도로가 서로 겹치면 어디까지가 도로인지 알아보기 힘들다
+  roadMarkPath(r, w) {
     const nodes = this.game.net.nodes, k = this.cam.k;
-    const cut = (n) => (n.terminal || n.inE.length < 2 ? 0 : (this.nodeRing(n) + 4) * k);
+    const cut = (n) => (n.terminal || n.inE.length < 2 ? 0 : (this.nodeRing(n) + 4) * k + w / 2);
     const pts = trimLine(r.pts, r.len, cut(nodes[r.a]), cut(nodes[r.b]));
     const p = new Path2D();
     if (pts.length >= 4) linePath(p, pts);
@@ -1357,10 +1297,10 @@ export class Renderer {
       const ox = (cam.W / 2) * this.dpr - cam.cx * s, oy = (cam.H / 2) * this.dpr - cam.cy * s;
       ctx.setTransform(s, 0, 0, s, ox, oy);
       ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(2 * (MEDIAN + LANE_W * sel.road.lanes) + 2 * cam.k, 5 * cam.k) * (0.7 + 0.3 * e);
-      ctx.lineCap = 'butt';
-      ctx.stroke(this.roadMarkPath(sel.road));
+      const w = Math.max(2 * (MEDIAN + LANE_W * sel.road.lanes) + 2 * cam.k, 5 * cam.k);
+      ctx.lineWidth = w * (0.7 + 0.3 * e);
       ctx.lineCap = 'round';
+      ctx.stroke(this.roadMarkPath(sel.road, w));
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     } else if (sel.type === 'approach') {
       const q = sel.edge;
