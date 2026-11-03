@@ -436,7 +436,7 @@ class App {
     const gap = (now - this.lastBg) / 1000;
     this.lastBg = now;
     if (now - this.lastFrame < 500) return;
-    if (this.lastFrame > 0 && now - this.lastFrame > 700) this.setAway(true);
+    if (this.lastFrame > 0 && now - this.lastFrame > 1500) this.setAway(true);
     const sim = Math.min(gap, 5);
     this.advance(sim, 120);
     if (gap > sim && this.started) this.awayBank += gap - sim;
@@ -454,7 +454,7 @@ class App {
       return;
     }
     // 새로 그린 프레임이 화면에 올라간 뒤에 걷어 낸다
-    requestAnimationFrame(() => requestAnimationFrame(() => this.awayEl.classList.remove('on')));
+    setTimeout(() => { if (!this.isAway) this.awayEl.classList.remove('on'); }, 60);
     const from = this.awayFrom;
     if (!from) return;
     const seconds = (Date.now() - from.t) / 1000;
