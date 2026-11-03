@@ -862,12 +862,36 @@ export class Renderer {
     }
     // 중간 축척은 같은 색과 폭끼리 묶어 한 번에 그린다
     const buckets = new Map();
+    // 도로에서는 키워 그리고, 칸에 가까워질수록(f가 1에 가까울수록) 실제 크기로 돌아온다
+    const scaleOf = (v, f) => {
+      const roadZ = this.truckLen(v, k) / v.len;
+      return roadZ + (1 - roadZ) * f;
+    };
+    // 축소하면 트럭 그림이 실제 간격보다 커진다. 그릴 자리가 없는 트럭은 아예 그리지 않는다.
+    // 겹치는 이웃 가운데 번호로 정한 순위가 가장 높은 트럭만 남겨, 앞차가 빠져도 줄 전체가 깜빡이지 않는다.
+    // list는 앞차부터 뒤차 순서, pos는 앞끝 위치, len은 그림 길이
+    const rank = (v) => Math.imul(v.id, 2654435761) >>> 0;
+    const hasRoom = (list, i, pos, len) => {
+      const c = list[i], head = pos(c), tail = head - len(c), r = rank(c);
+      for (let j = i - 1; j >= 0; j--) {
+        const o = list[j];
+        if (pos(o) - len(o) >= head) break;
+        if (rank(o) > r) return false;
+      }
+      for (let j = i + 1; j < list.length; j++) {
+        const o = list[j];
+        if (pos(o) <= tail) break;
+        if (rank(o) > r) return false;
+      }
+      return true;
+    };
+    const roadPos = (v) => v.s;
+    const roadLen = (v) => this.truckLen(v, k);
     const emit = (v, f) => {
       const g = TRUCK_GEO[v.model.id];
       const color = GOODS[v.route.goods].color;
       const L = v.lot;
-      const roadZ = this.truckLen(v, k) / v.len;
-      const z = roadZ + (1 - roadZ) * f;
+      const z = scaleOf(v, f);
       const lag = this.easeLag(v);
       let seg, p, reverse = false;
       if (!L) {
@@ -884,7 +908,7 @@ export class Renderer {
       }
       traffic.poseOn(v, seg, p, front, !L && v.lane ? v.seg : undefined);
       if (!inView(front[0], front[1])) return;
-      this.stepAxles(v, g, z, front[0], front[1], reverse, seg, p);
+      this.stepAxles(v, g, z, front[0], front[1], front[2], front[3], reverse, seg, p);
       if (detail) { this.drawTruckDetail(ctx, v, g, z, color); return; }
       const roadW = Math.max(v.model.width, (5.4 + Math.min(1.8, v.model.cap * 0.12)) * k);
       const w = L ? roadW + (Math.min(roadW, STALL_W * 0.72) - roadW) * f : roadW;
@@ -915,22 +939,39 @@ export class Renderer {
       const r = lane.edge.road;
       if (r.bb[2] < minX || r.bb[0] > maxX || r.bb[3] < minY || r.bb[1] > maxY) continue;
       const vs = lane.veh;
-      for (let i = 0; i < vs.length; i++) emit(vs[i], 0);
+      for (let i = 0; i < vs.length; i++) if (detail || hasRoom(vs, i, roadPos, roadLen)) emit(vs[i], 0);
     }
     for (const c of traffic.activeConns) {
       const vs = c.veh;
-      for (let i = 0; i < vs.length; i++) emit(vs[i], 0);
+      for (let i = 0; i < vs.length; i++) if (detail || hasRoom(vs, i, roadPos, roadLen)) emit(vs[i], 0);
     }
     // 주차장 안: 칸에 가까워질수록 도로에서 키워 그린 크기가 실제 크기로 돌아온다
     if (k < KM_LOT) {
       const pad = 12;
+      const lotF = (L) => {
+        if (L.phase === 'in') return Math.max(0, Math.min(1, L.s / L.seg.len));
+        if (L.phase === 'out' || L.phase === 'exit') return 1 - Math.max(0, Math.min(1, L.s / L.seg.len));
+        return 1;
+      };
+      // 들어오는 줄과 나가는 줄도 도로와 같은 규칙으로 고른다
+      const crowded = new Set();
+      if (!detail) {
+        const lotLen = (v) => v.len * scaleOf(v, lotF(v.lot));
+        const inPos = (v) => v.lot.s;
+        const outPos = (v) => v.lot.s - v.lot.seg.len;
+        for (const s of game.sites) {
+          const list = s.lot && s.lot.active;
+          if (!list || list.length < 2) continue;
+          const inn = list.filter((v) => v.lot.phase === 'in').sort((a, b) => inPos(b) - inPos(a));
+          const out = list.filter((v) => v.lot.phase === 'out' || v.lot.phase === 'exit').sort((a, b) => outPos(b) - outPos(a));
+          for (let i = 0; i < inn.length; i++) if (!hasRoom(inn, i, inPos, lotLen)) crowded.add(inn[i]);
+          for (let i = 0; i < out.length; i++) if (!hasRoom(out, i, outPos, lotLen)) crowded.add(out[i]);
+        }
+      }
       for (const v of game.lotVehicles) {
         const L = v.lot, s = L.site;
         if (s.x < minX - pad || s.x > maxX + pad || s.y < minY - pad || s.y > maxY + pad) continue;
-        let f = 1;
-        if (L.phase === 'in') f = Math.max(0, Math.min(1, L.s / L.seg.len));
-        else if (L.phase === 'out' || L.phase === 'exit') f = 1 - Math.max(0, Math.min(1, L.s / L.seg.len));
-        emit(v, f);
+        if (!crowded.has(v)) emit(v, lotF(L));
       }
     }
     // 납작한 사각형. 싣고 가면 꽉 채우고, 빈 차는 속을 비운다
@@ -980,7 +1021,7 @@ export class Renderer {
 
   // 앞바퀴가 길을 따라가면 뒷바퀴는 끌려온다 (후진이면 거꾸로). 그래서 회전 중심이 뒷바퀴 쪽에 생기고
   // 커브에서 뒷바퀴가 안쪽으로 파고들며, 트레일러는 연결부에서 꺾인다.
-  stepAxles(v, g, z, lx, ly, reverse, seg, p) {
+  stepAxles(v, g, z, lx, ly, tx, ty, reverse, seg, p) {
     const t = this.game.time;
     const dt = t - v.aT;
     const wb = g.wb * z, wb2 = (g.wb2 || 0) * z;
@@ -1002,6 +1043,7 @@ export class Renderer {
       }
       v.aT = t;
       v.aRev = reverse;
+      v.aOdo = v.dOdo;
       v.aErrX = 0; v.aErrY = 0;
       return;
     }
@@ -1019,44 +1061,46 @@ export class Renderer {
       if (Math.abs(v.aErrX) + Math.abs(v.aErrY) < 0.001) { v.aErrX = 0; v.aErrY = 0; }
       lx += v.aErrX; ly += v.aErrY;
     }
-    // 끄는 점 a(직전 위치 p)가 끌려오는 점 b를 거리 dist로 당긴다.
-    // 몸체가 a가 움직인 방향과 limit 넘게 벌어지면 조금씩 돌려 맞춰, b가 뒤로 밀리지 않게 한다
-    const tow = (ax, ay, px, py, bx, by, dist, limit, out) => {
+    // 실제로 달렸는가. 확대 축소로 그림 크기가 바뀌면 앞축 위치도 바뀌지만 달린 것은 아니다
+    const moved = Math.abs(v.dOdo - v.aOdo) > 5e-4;
+    v.aOdo = v.dOdo;
+    // 끄는 점 a가 끌려오는 점 b를 거리 dist로 당긴다.
+    // 달리는 중에 몸체가 있어야 할 방향 (fx, fy)에서 limit 넘게 벌어지면 조금씩 돌려 맞춰, b가 뒤로 밀리지 않게 한다
+    const tow = (ax, ay, bx, by, dist, fx, fy, limit, out) => {
       let dx = bx - ax, dy = by - ay;
       const l = Math.hypot(dx, dy) || 1;
       dx /= l; dy /= l;
-      let ux = px - ax, uy = py - ay;
-      const m = Math.hypot(ux, uy);
-      if (m > 1e-4) {
-        ux /= m; uy /= m;
-        const ang = Math.acos(Math.max(-1, Math.min(1, dx * ux + dy * uy)));
+      if (moved) {
+        const ang = Math.acos(Math.max(-1, Math.min(1, dx * fx + dy * fy)));
         if (ang > limit) {
           const to = ang - Math.min(ang - limit, STEER_RATE * dt);
-          const sign = ux * dy - uy * dx >= 0 ? 1 : -1;
+          const sign = fx * dy - fy * dx >= 0 ? 1 : -1;
           const c = Math.cos(to), s = Math.sin(to) * sign;
-          dx = ux * c - uy * s;
-          dy = ux * s + uy * c;
+          dx = fx * c - fy * s;
+          dy = fx * s + fy * c;
         }
       }
       out[0] = ax + dx * dist;
       out[1] = ay + dy * dist;
     };
     const q = this.tmp3;
-    const p0x = v.a0x, p0y = v.a0y, p1x = v.a1x, p1y = v.a1y, p2x = v.a2x, p2y = v.a2y;
     if (!reverse) {
       v.a0x = lx; v.a0y = ly;
-      tow(v.a0x, v.a0y, p0x, p0y, v.a1x, v.a1y, wb, MAX_STEER, q);
+      tow(v.a0x, v.a0y, v.a1x, v.a1y, wb, -tx, -ty, MAX_STEER, q);
       v.a1x = q[0]; v.a1y = q[1];
-      if (g.wb2) { tow(v.a1x, v.a1y, p1x, p1y, v.a2x, v.a2y, wb2, MAX_JOINT, q); v.a2x = q[0]; v.a2y = q[1]; }
+      if (g.wb2) {
+        tow(v.a1x, v.a1y, v.a2x, v.a2y, wb2, (v.a1x - v.a0x) / wb, (v.a1y - v.a0y) / wb, MAX_JOINT, q);
+        v.a2x = q[0]; v.a2y = q[1];
+      }
     } else if (g.wb2) {
       v.a2x = lx; v.a2y = ly;
-      tow(v.a2x, v.a2y, p2x, p2y, v.a1x, v.a1y, wb2, MAX_JOINT, q);
+      tow(v.a2x, v.a2y, v.a1x, v.a1y, wb2, -tx, -ty, MAX_JOINT, q);
       v.a1x = q[0]; v.a1y = q[1];
-      tow(v.a1x, v.a1y, p1x, p1y, v.a0x, v.a0y, wb, MAX_STEER, q);
+      tow(v.a1x, v.a1y, v.a0x, v.a0y, wb, (v.a1x - v.a2x) / wb2, (v.a1y - v.a2y) / wb2, MAX_STEER, q);
       v.a0x = q[0]; v.a0y = q[1];
     } else {
       v.a1x = lx; v.a1y = ly;
-      tow(v.a1x, v.a1y, p1x, p1y, v.a0x, v.a0y, wb, MAX_STEER, q);
+      tow(v.a1x, v.a1y, v.a0x, v.a0y, wb, -tx, -ty, MAX_STEER, q);
       v.a0x = q[0]; v.a0y = q[1];
     }
   }
