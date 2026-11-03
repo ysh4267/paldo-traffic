@@ -994,6 +994,7 @@ export class Renderer {
         continue;
       }
       const r = this.siteBadgeSize(s);
+      if (k < 0.11) this.drawParked(ctx, s, x, y, r);
       this.drawBadge(ctx, s, x, y, r);
       if (k < 0.24 || (s.isCity && (k < 0.6 || s.pop > 90)) || this.selection?.site === s || this.hover?.site === s || this.tutorTarget === s) {
         this.drawSiteLabel(ctx, s, x, y, r, labelBoxes);
@@ -1023,6 +1024,36 @@ export class Renderer {
       ctx.arc(x, y, 18 + pulse * 26, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
+    }
+  }
+
+  // 상하차장과 대기장의 트럭을 거점 둘레에 세워 둔다
+  drawParked(ctx, s, x, y, r) {
+    const k = this.cam.k;
+    const list = [];
+    for (const b of s.loadBays) list.push(b.v);
+    for (const b of s.unloadBays) list.push(b.v);
+    for (const v of s.yard) { if (list.length >= 18) break; list.push(v); }
+    for (const v of s.exitQ) { if (list.length >= 18) break; list.push(v); }
+    if (!list.length) return;
+    const R = r + 15;
+    const n = list.length;
+    for (let i = 0; i < n; i++) {
+      const v = list[i];
+      const a = (i / Math.max(n, 8)) * Math.PI * 2 - Math.PI / 2;
+      const px = x + Math.cos(a) * R, py = y + Math.sin(a) * R;
+      const L = Math.max(10, v.model.len / k), W = Math.max(4.5, v.model.width / k);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(a + Math.PI / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(-L / 2 + 1, -W / 2 + 1, L, W);
+      ctx.fillStyle = v.goods ? GOODS[v.goods].color : '#c7cdd2';
+      ctx.fillRect(-L / 2, -W / 2, L * 0.72, W);
+      const cab = v.model.id === 'hauler' ? '#1f6fd1' : v.model.id === 'cargo' ? '#17a673' : v.model.id === 'trailer' ? '#d9402f' : '#00857a';
+      ctx.fillStyle = cab;
+      ctx.fillRect(-L / 2 + L * 0.74, -W / 2, L * 0.26, W);
+      ctx.restore();
     }
   }
 
@@ -1232,7 +1263,8 @@ export class Renderer {
       const tol = 7 * cam.k;
       let best = null, bd = tol;
       for (const r of net.roads) {
-        if (!r.open || (r.kind === 'f' && tool !== 'select')) continue;
+        const planned = tool === 'select' && r.lock && !r.built && r.region <= game.stage;
+        if ((!r.open && !planned) || (r.kind === 'f' && tool !== 'select')) continue;
         if (wx < r.bb[0] - tol || wx > r.bb[2] + tol || wy < r.bb[1] - tol || wy > r.bb[3] + tol) continue;
         const pts = r.pts;
         for (let i = 0; i + 3 < pts.length; i += 2) {
@@ -1241,7 +1273,10 @@ export class Renderer {
           if (dd < bd) { bd = dd; best = r; }
         }
       }
-      if (best) return { type: 'road', road: best };
+      if (best) {
+        if (best.lock && !best.built) return { type: 'project', project: game.projById.get(best.lock) };
+        return { type: 'road', road: best };
+      }
     }
     return null;
   }

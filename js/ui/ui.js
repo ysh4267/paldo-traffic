@@ -326,6 +326,7 @@ export class UI {
     else if (sel.type === 'node') view = this.nodeView(sel.node);
     else if (sel.type === 'road') view = this.roadView(sel.road);
     else if (sel.type === 'approach') view = this.nodeView(sel.node);
+    else if (sel.type === 'project') view = this.projectView(sel.project);
     else view = this.overviewView();
     this.el.insp.classList.toggle('collapsed', !sel && this.collapsed);
     patch(this.el.insp, view);
@@ -605,6 +606,21 @@ export class UI {
         }, ico('tow'), canTow ? `맨 앞 트럭 견인 ${fmtWon(g.towPrice(n))}` : '구난 계약을 연구하면 견인할 수 있습니다')));
     }
     return [head, h('div', { class: 'p-body', key: `body-n${n.id}` }, body)];
+  }
+
+  projectView(p) {
+    const g = this.game;
+    const price = g.projectPrice(p);
+    const avail = g.projectAvailable(p);
+    const stageName = g.regions[p.stage]?.short || '';
+    return [this.head('blue', raw(iconHtml(p.kind === 'bridge' ? 'ship' : 'build'), 'ico'), p.name, `${p.kind === 'bridge' ? '대교·해상 도로' : '우회 고속도로'} · ${Math.round(p.km)}km`, () => this.select(null)),
+      h('div', { class: 'p-body', key: `body-p${p.id}` },
+        h('p', { class: 'note', key: 'd' }, p.desc),
+        h('p', { class: 'note', key: 'n' }, '건설하면 트럭들이 알아서 더 빠른 길로 다닙니다. 막히는 구간의 교통량을 나누는 데 좋습니다.'),
+        p.built ? h('span', { class: 'chip ok', key: 'b' }, '개통 완료')
+          : avail ? h('button', { class: 'btn buy', key: 'b', disabled: g.money < price, onclick: () => { if (g.buildProject(p)) { this.sound.fanfare(); this.r.baseDirty = true; this.select(null); this.renderTop(); } else this.sound.deny(); } }, '건설', h('span', { class: 'price' }, fmtWon(price)))
+            : h('span', { class: 'chip warn', key: 'b' }, `${stageName} 권역이 열리면 건설할 수 있습니다`)),
+    ];
   }
 
   ferryView(r) {
