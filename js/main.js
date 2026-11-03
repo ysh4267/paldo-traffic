@@ -84,6 +84,7 @@ class App {
   }
 
   resetGame() {
+    this.noSave = true;
     store.del(SAVE_KEY);
     window.location.reload();
   }
@@ -93,6 +94,7 @@ class App {
       const json = decodeURIComponent(escape(atob(text)));
       const parsed = JSON.parse(json);
       if (!parsed || parsed.v === undefined || !Array.isArray(parsed.pts)) throw new Error('형식 오류');
+      this.noSave = true;
       store.set(SAVE_KEY, JSON.stringify(parsed));
       window.location.reload();
     } catch {
@@ -101,7 +103,7 @@ class App {
   }
 
   save() {
-    if (!this.started || !this.game) return;
+    if (!this.started || !this.game || this.noSave) return;
     store.set(SAVE_KEY, JSON.stringify(this.game.serialize()));
   }
 

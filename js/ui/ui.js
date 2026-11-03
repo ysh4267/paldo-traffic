@@ -454,7 +454,7 @@ export class UI {
     }
     const cost = g.upgradeCost(s);
     kids.push(h('button', {
-      class: 'btn buy', key: 'upg', disabled: g.money < cost, onclick: () => { if (g.buyUpgrade(s)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); },
+      class: 'btn up', key: 'upg', disabled: g.money < cost, onclick: () => { if (g.buyUpgrade(s)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); },
       'data-tip': `생산량이 38% 늘어나고 창고도 커집니다.\n늘어난 물량을 나를 트럭이 더 필요해집니다.`,
     }, h('span', null, `생산 증설 Lv.${s.level + 1}`, h('small', null, `${rate.toFixed(2)} → ${(rate * 1.38).toFixed(2)} t/s`)), h('span', { class: 'price' }, fmtWon(cost))));
     return [h('div', { class: 'sec', key: 'prod' }, h('h3', null, '생산', h('span', null, `${rate.toFixed(2)} t/s`)), kids)];
@@ -544,7 +544,7 @@ export class UI {
     return h('div', { class: 'sec', key: 'bay' }, h('h3', null, '상하차장', h('span', null, `${s.bays}칸`)),
       h('div', { class: 'statusline' }, h('span', { class: `chip ${waiting >= 3 ? 'bad' : 'ok'}` }, waiting >= 3 ? `진입로 ${waiting}대 대기` : '대기 없음'), s.yard.length > 0 && h('span', { class: 'chip info' }, `대기장 ${s.yard.length}대`)),
       s.bays < 12 && h('button', {
-        class: 'btn buy', disabled: g.money < cost, onclick: () => { if (g.buyBay(s)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); },
+        class: 'btn up', disabled: g.money < cost, onclick: () => { if (g.buyBay(s)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); },
         'data-tip': '상하차장이 늘면 트럭이 진입로에서 덜 기다립니다.\n진입로 정체가 큰길까지 번지는 것을 막아 줍니다.',
       }, h('span', null, `상하차장 ${s.bays} → ${s.bays + 1}칸`), h('span', { class: 'price' }, fmtWon(cost))));
   }

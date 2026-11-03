@@ -16,6 +16,7 @@ const V_STRAIGHT = 0.92;
 const V_RING = 0.52;
 const GAP_YIELD = 1.05;    // 양보 쪽이 확인하는 우선 차량까지의 시간 간격 s
 const GAP_STOP = 1.5;
+const PATIENCE = 14;       // 양보 쪽 트럭이 참는 시간 s
 
 export class Vehicle {
   constructor(id, model, route) {
@@ -236,6 +237,7 @@ export class Traffic {
     const prioOf = (f) => {
       const e = f.lane.edge;
       if (control !== 'auto') return 0;
+      if (f.waitT > PATIENCE) return 0; // 오래 기다린 차는 끼어든다
       if (e.sign > 0) return e.sign;
       if (hasSign) return 0;
       if (node.major.size) return node.major.has(e.id) ? 0 : 1;

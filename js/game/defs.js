@@ -49,17 +49,17 @@ export const TRUCKS = [
 ];
 
 // 권역별 진행 목표 (납품 실적 점수)
-export const REGION_GOAL = [260, 900, 3000, 7000, 16000, 26000, 70000, 150000, 420000];
+export const REGION_GOAL = [260, 800, 2200, 5000, 11000, 14000, 45000, 100000, 300000];
 export const ENDLESS_GOAL_BASE = 800000;
 
 // 일회성 연구
 export const TECHS = [
-  { id: 'signal', name: '신호등', icon: 'signal', cost: 80 * MAN, stage: 0, at: 0.08, desc: '교차로에 신호등을 설치합니다. 몰리는 교차로의 처리량이 크게 늘어납니다.' },
+  { id: 'signal', name: '신호등', icon: 't_signal', cost: 80 * MAN, stage: 0, at: 0.08, desc: '교차로에 신호등을 설치합니다. 몰리는 교차로의 처리량이 크게 늘어납니다.' },
   { id: 'tow', name: '구난 계약', icon: 'tow', cost: 600 * MAN, stage: 0, at: 0.6, desc: '오래 막힌 교차로에 구난차를 불러 맨 앞 트럭을 빼낼 수 있습니다.' },
-  { id: 'roundabout', name: '회전교차로', icon: 'roundabout', cost: 1500 * MAN, stage: 1, at: 0, desc: '멈추지 않고 합류하는 회전교차로를 놓습니다. 교통량이 적당한 곳에 좋습니다.' },
+  { id: 'roundabout', name: '회전교차로', icon: 't_roundabout', cost: 1500 * MAN, stage: 1, at: 0, desc: '멈추지 않고 합류하는 회전교차로를 놓습니다. 교통량이 적당한 곳에 좋습니다.' },
   { id: 'cargo5', name: '5톤 카고', icon: 'truck_cargo', cost: 2500 * MAN, stage: 1, at: 0.3, desc: '5톤 트럭을 구매합니다. 같은 물량을 훨씬 적은 대수로 옮깁니다.' },
   { id: 'smartsig', name: '감응 신호', icon: 'smartsig', cost: 1.5e8, stage: 2, at: 0, desc: '신호등이 대기열을 보고 현시를 연장하거나 일찍 끊습니다.' },
-  { id: 'interchange', name: '입체교차로', icon: 'interchange', cost: 8e8, stage: 3, at: 0, desc: '교차 흐름을 입체로 분리합니다. 값비싸지만 합류 외 충돌이 사라집니다.' },
+  { id: 'interchange', name: '입체교차로', icon: 't_interchange', cost: 8e8, stage: 3, at: 0, desc: '교차 흐름을 입체로 분리합니다. 값비싸지만 합류 외 충돌이 사라집니다.' },
   { id: 'trailer', name: '25톤 트레일러', icon: 'truck_trailer', cost: 12e8, stage: 3, at: 0.4, desc: '한 번에 25톤을 나릅니다. 길이가 길어 교차로를 오래 차지합니다.' },
   { id: 'nav', name: '실시간 내비', icon: 'nav', cost: 40e8, stage: 4, at: 0, desc: '출발하는 트럭이 정체를 피해 더 빠른 길을 고릅니다.' },
   { id: 'express', name: '특송 윙바디', icon: 'truck_express', cost: 90e8, stage: 4, at: 0.5, desc: '40% 빠르고 정시 보너스를 더 받는 특송 트럭입니다.' },

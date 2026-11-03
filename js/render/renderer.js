@@ -127,6 +127,7 @@ export class Renderer {
     this.tool = 'select';
     this.time = 0;
     this.cityCache = new Map();
+    this.decorCache = new Map();
     this.pings = [];
     this.tutorTarget = null;
     this.lastCongDraw = 0;
@@ -630,7 +631,7 @@ export class Renderer {
       let color;
       if (c > 0.62) color = close ? 'rgba(226,44,30,0.5)' : '#e22c1e';
       else if (c > 0.3) color = close ? 'rgba(245,158,28,0.42)' : '#f59e1c';
-      else if (close) continue;
+      else if (k < 0.2) continue;
       else color = '#27a55f';
       ctx.strokeStyle = color;
       ctx.lineWidth = Math.max(LANE_W * e.road.lanes, (e.road.kind === 'x' ? 1.7 : 1.3) * k);
@@ -729,7 +730,9 @@ export class Renderer {
 
   drawTruckDetail(ctx, v, x, y, tx, ty, k) {
     const m = v.model;
-    const L = m.len, W = m.width;
+    // 먼 축척에서도 트럭이 잘 보이도록 최소 크기를 둔다
+    const inflate = Math.max(1, (3.4 * k) / m.width);
+    const L = m.len * Math.min(inflate, 1.5), W = m.width * inflate;
     ctx.save();
     ctx.transform(tx, ty, -ty, tx, x, y);
     // 그림자
@@ -988,6 +991,7 @@ export class Renderer {
       }
       const r = this.siteBadgeSize(s);
       if (s.isCity && k < 0.34) this.drawCityCluster(ctx, s, x, y);
+      else if (!s.isCity && k < 0.2) this.drawSiteDecor(ctx, s, x, y);
       this.drawBadge(ctx, s, x, y, r);
       if (k < 0.24 || (s.isCity && (k < 0.6 || s.pop > 90)) || this.selection?.site === s || this.hover?.site === s || this.tutorTarget === s) {
         this.drawSiteLabel(ctx, s, x, y, r, labelBoxes);
@@ -1121,6 +1125,19 @@ export class Renderer {
     }
     const w = (spr.width / 2) * scale, h = (spr.height / 2) * scale;
     ctx.drawImage(spr, x - w / 2, y - h * 0.62, w, h);
+  }
+
+  // 거점 주변 풍경 (과수원 나무, 논밭, 컨테이너 야적장 등)
+  drawSiteDecor(ctx, s, x, y) {
+    const k = this.cam.k;
+    let spr = this.decorCache.get(s.id);
+    if (!spr) {
+      spr = makeSiteDecor(s);
+      this.decorCache.set(s.id, spr);
+    }
+    const scale = Math.min(1.6, 0.08 / k);
+    const w = (spr.width / 2) * scale, h = (spr.height / 2) * scale;
+    ctx.drawImage(spr, x - w / 2, y - h / 2, w, h);
   }
 
   drawPings(ctx, dt) {
@@ -1265,6 +1282,21 @@ function makeCitySprite(s) {
     if (st >= 4 && roll > 1.34) type = 4;
     list.push({ x: px, y: py, type, central });
   }
+  // 시가지 바닥
+  const groundR = 150 * (0.72 + st * 0.07);
+  const grd = g.createRadialGradient(W / 2, H * 0.68, 8, W / 2, H * 0.68, groundR);
+  grd.addColorStop(0, 'rgba(120,118,104,0.55)');
+  grd.addColorStop(0.65, 'rgba(150,146,126,0.32)');
+  grd.addColorStop(1, 'rgba(150,146,126,0)');
+  g.fillStyle = grd;
+  g.save();
+  g.translate(W / 2, H * 0.68);
+  g.scale(1, 0.55);
+  g.translate(-W / 2, -H * 0.68);
+  g.beginPath();
+  g.arc(W / 2, H * 0.68, groundR, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
   list.sort((p, q) => p.y - q.y);
   for (const b of list) {
     if (b.type === 0) drawHouse(g, b.x, b.y, rnd);
@@ -1272,6 +1304,186 @@ function makeCitySprite(s) {
     else if (b.type === 2) drawBox(g, b.x, b.y, 22 + rnd() * 6, 34 + rnd() * 22, ['#f1eee6', '#e4e8ea', '#dfd9cc'][Math.floor(rnd() * 3)], 6, rnd);
     else if (b.type === 3) drawBox(g, b.x, b.y, 16 + rnd() * 6, 60 + rnd() * 40, ['#b6cfe0', '#9dbdd4', '#c6d6df'][Math.floor(rnd() * 3)], 9, rnd);
     else drawBox(g, b.x, b.y, 17 + rnd() * 8, 96 + rnd() * 70, ['#5f8fb5', '#4a7ba3', '#7ca6c4'][Math.floor(rnd() * 3)], 14, rnd);
+  }
+  return c;
+}
+
+// 거점 종류별 풍경 스프라이트
+function makeSiteDecor(s) {
+  const W = 260, H = 200;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = hash(s.id + 'decor');
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const cx = W / 2, cy = H / 2;
+  const spot = (minR = 34, maxR = 118) => {
+    const a = rnd() * Math.PI * 2;
+    const rr = minR + rnd() * (maxR - minR);
+    return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.72];
+  };
+  const tree = (x, y, r, col, trunk = '#6b4423') => {
+    g.fillStyle = 'rgba(20,40,20,0.2)';
+    g.beginPath(); g.ellipse(x + r * 0.5, y + r * 0.4, r, r * 0.55, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = trunk;
+    g.fillRect(x - r * 0.16, y - r * 0.2, r * 0.32, r * 0.75);
+    g.fillStyle = col;
+    g.beginPath(); g.arc(x, y - r * 0.5, r, 0, Math.PI * 2); g.fill();
+  };
+  const pine = (x, y, r, col) => {
+    g.fillStyle = 'rgba(20,40,20,0.2)';
+    g.beginPath(); g.ellipse(x + r * 0.4, y + 1, r * 0.9, r * 0.4, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(x, y - r * 2.4); g.lineTo(x + r, y); g.lineTo(x - r, y); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.1)';
+    g.beginPath(); g.moveTo(x, y - r * 2.4); g.lineTo(x, y); g.lineTo(x - r, y); g.closePath(); g.fill();
+  };
+  const shed = (x, y, w, h, col, roof) => {
+    g.fillStyle = 'rgba(20,30,20,0.22)';
+    g.fillRect(x + 3, y + 3, w, h);
+    g.fillStyle = col;
+    g.fillRect(x, y, w, h);
+    g.fillStyle = roof;
+    g.fillRect(x, y, w, h * 0.35);
+  };
+  const stack = (x, y, r, h, col) => {
+    g.fillStyle = col;
+    g.fillRect(x - r, y - h, r * 2, h);
+    g.fillStyle = 'rgba(255,255,255,0.28)';
+    g.beginPath(); g.ellipse(x, y - h, r, r * 0.45, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.14)';
+    g.beginPath(); g.ellipse(x, y, r, r * 0.45, 0, 0, Math.PI); g.fill();
+  };
+  const k = s.kind;
+  if (k === 'orchard') {
+    const col = s.def.g === 'fruit' && s.id.includes('tangerine') ? '#e8902a' : '#d9402f';
+    for (let row = -3; row <= 3; row++) {
+      for (let c2 = -4; c2 <= 4; c2++) {
+        if (Math.hypot(c2 * 0.8, row) < 1.4) continue;
+        const x = cx + c2 * 27 + (row % 2) * 8, y = cy + row * 24;
+        tree(x, y, 8.5, '#3f8f45');
+        g.fillStyle = col;
+        for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(x - 5 + rnd() * 10, y - 8 + rnd() * 8, 1.8, 0, Math.PI * 2); g.fill(); }
+      }
+    }
+  } else if (k === 'field') {
+    const cols = ['#e3c652', '#cdd65f', '#d9b844', '#b9cf58'];
+    for (let i = -2; i <= 1; i++) {
+      for (let j = -2; j <= 1; j++) {
+        const x = cx + i * 58 + 3, y = cy + j * 46 + 3;
+        if (Math.hypot(x + 26 - cx, y + 20 - cy) < 30) continue;
+        g.fillStyle = cols[Math.floor(rnd() * cols.length)];
+        g.fillRect(x, y, 52, 40);
+        g.strokeStyle = 'rgba(120,100,30,0.35)';
+        g.lineWidth = 1.2;
+        for (let q = 6; q < 40; q += 7) { g.beginPath(); g.moveTo(x + 1, y + q); g.lineTo(x + 51, y + q); g.stroke(); }
+      }
+    }
+  } else if (k === 'forest') {
+    const list = [];
+    for (let i = 0; i < 46; i++) list.push(spot(30, 122));
+    list.sort((p, q) => p[1] - q[1]);
+    for (const [x, y] of list) pine(x, y, 7 + rnd() * 4, rnd() < 0.5 ? '#2c7a3f' : '#1f6634');
+  } else if (k === 'quarry') {
+    g.fillStyle = '#b9bcb6';
+    g.beginPath(); g.ellipse(cx, cy, 118, 82, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#a2a69f';
+    g.beginPath(); g.ellipse(cx, cy, 88, 60, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#8b8f89';
+    g.beginPath(); g.ellipse(cx, cy, 60, 40, 0, 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 14; i++) {
+      const [x, y] = spot(46, 100);
+      g.fillStyle = rnd() < 0.5 ? '#d7d9d3' : '#74786f';
+      g.beginPath(); g.arc(x, y, 3 + rnd() * 4, 0, Math.PI * 2); g.fill();
+    }
+  } else if (k === 'sea' || k === 'salt') {
+    if (k === 'salt') {
+      for (let i = -3; i <= 2; i++) {
+        for (let j = -2; j <= 1; j++) {
+          const x = cx + i * 40 + 1, y = cy + j * 34 + 1;
+          if (Math.hypot(x + 18 - cx, y + 14 - cy) < 28) continue;
+          g.fillStyle = rnd() < 0.5 ? '#bfe6f2' : '#d9f1f7';
+          g.fillRect(x, y, 36, 28);
+          if (rnd() < 0.4) { g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(x + 8, y + 22); g.lineTo(x + 18, y + 8); g.lineTo(x + 28, y + 22); g.closePath(); g.fill(); }
+        }
+      }
+    } else {
+      g.fillStyle = '#7fb9d3';
+      g.fillRect(cx + 22, cy - 12, 96, 8);
+      g.fillRect(cx + 22, cy + 20, 86, 8);
+      for (let i = 0; i < 7; i++) {
+        const x = cx + 36 + rnd() * 78, y = cy - 42 + rnd() * 96;
+        g.fillStyle = rnd() < 0.5 ? '#d9402f' : '#1f6fd1';
+        g.beginPath(); g.moveTo(x - 11, y); g.lineTo(x + 11, y); g.lineTo(x + 7, y + 6); g.lineTo(x - 7, y + 6); g.closePath(); g.fill();
+        g.fillStyle = '#fff';
+        g.fillRect(x - 3, y - 5, 6, 5);
+      }
+      for (let i = 0; i < 5; i++) shed(cx - 100 + rnd() * 70, cy - 56 + i * 24, 26, 15, '#e7dfca', '#3f6fb5');
+    }
+  } else if (k === 'port') {
+    g.fillStyle = '#9aa3a8';
+    g.fillRect(cx - 120, cy - 74, 240, 148);
+    const cols = ['#d9402f', '#1f6fd1', '#f08a24', '#17a673', '#f6b01e', '#8e5bc2'];
+    for (let i = 0; i < 44; i++) {
+      const col = i % 11, row = Math.floor(i / 11);
+      const x = cx - 112 + col * 20, y = cy - 66 + row * 16;
+      if (Math.hypot(x + 8 - cx, y + 5 - cy) < 32) continue;
+      g.fillStyle = cols[Math.floor(rnd() * cols.length)];
+      g.fillRect(x, y, 17, 10);
+      g.fillStyle = 'rgba(0,0,0,0.14)';
+      g.fillRect(x, y + 7, 17, 3);
+    }
+    for (let i = 0; i < 4; i++) {
+      const x = cx - 96 + i * 62, y = cy + 66;
+      g.fillStyle = '#0b4ea2';
+      g.fillRect(x, y - 36, 5, 36);
+      g.fillRect(x + 24, y - 36, 5, 36);
+      g.fillRect(x - 10, y - 40, 50, 5);
+    }
+  } else if (k === 'shipyard') {
+    g.fillStyle = '#9aa3a8';
+    g.fillRect(cx - 124, cy - 70, 248, 140);
+    for (let i = 0; i < 2; i++) {
+      const y = cy - 52 + i * 84;
+      g.fillStyle = '#1f5fa8';
+      g.beginPath(); g.moveTo(cx - 110, y); g.lineTo(cx - 34, y); g.lineTo(cx - 34, y + 22); g.lineTo(cx - 102, y + 22); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(cx + 34, y); g.lineTo(cx + 110, y); g.lineTo(cx + 102, y + 22); g.lineTo(cx + 34, y + 22); g.closePath(); g.fill();
+      g.fillStyle = '#d9402f';
+      g.fillRect(cx - 108, y + 18, 72, 4);
+      g.fillRect(cx + 36, y + 18, 70, 4);
+    }
+    g.fillStyle = '#f6b01e';
+    g.fillRect(cx - 124, cy - 8, 248, 6);
+  } else {
+    // 공장 지대
+    const roofs = { foodplant: '#f08a24', sawmill: '#94633a', furniture: '#b5651d', cementplant: '#7f8c96', steelmill: '#3f566b', chemplant: '#8e5bc2', partsplant: '#3f6fb5', appliance: '#17a673', carplant: '#d43f5e', fab: '#00857a' };
+    const roof = roofs[k] || '#7f8c96';
+    g.fillStyle = 'rgba(120,120,110,0.42)';
+    g.fillRect(cx - 108, cy - 68, 216, 136);
+    const spots = [[-98, -60], [-36, -60], [30, -60], [-98, -14], [46, -14], [-98, 30], [-36, 34], [30, 30]];
+    for (const [dx, dy] of spots) {
+      const w = 46 + rnd() * 18, h = 26 + rnd() * 8;
+      shed(cx + dx, cy + dy, w, h, '#e4e1d6', roof);
+    }
+    if (k === 'steelmill' || k === 'cementplant' || k === 'chemplant') {
+      for (let i = 0; i < 4; i++) stack(cx - 60 + i * 40, cy + 66, 8, 40 + rnd() * 26, k === 'chemplant' ? '#a57bd6' : k === 'steelmill' ? '#4c6277' : '#a9b3ba');
+    }
+    if (k === 'sawmill') {
+      for (let i = 0; i < 16; i++) {
+        const [x, y] = spot(50, 110);
+        g.fillStyle = '#94633a';
+        g.fillRect(x - 12, y - 3, 24, 6);
+        g.fillStyle = '#d9ae79';
+        g.beginPath(); g.arc(x + 12, y, 3, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (k === 'carplant') {
+      const cols = ['#d43f5e', '#ffffff', '#23282c', '#1f6fd1'];
+      for (let i = 0; i < 30; i++) {
+        g.fillStyle = cols[Math.floor(rnd() * cols.length)];
+        g.fillRect(cx - 102 + (i % 15) * 14, cy + 58 + Math.floor(i / 15) * 9, 11, 6);
+      }
+    }
   }
   return c;
 }
