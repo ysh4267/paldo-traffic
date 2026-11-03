@@ -929,6 +929,19 @@ export class Game {
     v.nextModel = null;
     v.aT = undefined; // 축 길이가 바뀌었으니 다음에 그릴 때 곧게 다시 놓는다
   }
+  // 거점마다 한 번씩 사는 것의 계획. 싼 곳부터 돈이 닿는 만큼
+  planSites(sites, costOf) {
+    const plan = { list: [], all: sites.length, cost: 0, full: 0 };
+    let left = this.money;
+    for (const [s, c] of sites.map((q) => [q, costOf(q)]).sort((a, b) => a[1] - b[1])) {
+      plan.full += c;
+      if (c > left) continue;
+      left -= c;
+      plan.cost += c;
+      plan.list.push(s);
+    }
+    return plan;
+  }
   // 여러 노선을 바꿀 때의 계획. convertTrucks처럼 노선 안에서는 돈이 모자란 트럭에서 멈춘다
   planConvert(routes, modelIdx) {
     const plan = { n: 0, all: 0, cost: 0, full: 0, some: new Set(), every: new Set() };
@@ -959,9 +972,11 @@ export class Game {
   routeValue(r) {
     return r.perTon / (r.freeTime * 2 + 6);
   }
-  // 이 거점에서 트럭을 더할 노선: 달리는 노선 전부. 하나도 없으면 가장 잘 버는 노선을 연다
-  bulkRoutes(s) {
+  // 이 거점에서 트럭을 더할 노선. running은 달리는 노선 전부이고, 하나도 없으면 가장 잘 버는 노선을 연다. empty는 빈 노선, all은 전부
+  bulkRoutes(s, on = 'running') {
     const valid = s.routesOut.filter((q) => q.valid);
+    if (on === 'all') return valid;
+    if (on === 'empty') return valid.filter((q) => !q.trucks.length);
     const running = valid.filter((q) => q.trucks.length);
     if (running.length) return running;
     return valid.length ? [valid.reduce((a, b) => (this.routeValue(b) > this.routeValue(a) ? b : a))] : [];

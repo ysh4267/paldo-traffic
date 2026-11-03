@@ -45,6 +45,17 @@ function update(el, v) {
   if (next.html === undefined) patch(el, v.kids);
 }
 
+function same(el, v) {
+  return el.nodeType === 1 && el.localName === v.tag && el.__key === v.props.key;
+}
+
+function usedLater(el, list, i) {
+  for (let j = i + 1; j < list.length; j++) {
+    if (typeof list[j] === 'object' && same(el, list[j])) return true;
+  }
+  return false;
+}
+
 export function patch(parent, vnodes) {
   const list = Array.isArray(vnodes) ? vnodes : [vnodes];
   let i = 0;
@@ -60,11 +71,21 @@ export function patch(parent, vnodes) {
       }
       continue;
     }
-    if (cur && cur.nodeType === 1 && cur.localName === v.tag && cur.__key === v.props.key) update(cur, v);
-    else {
-      const el = create(v);
-      if (cur) parent.replaceChild(el, cur); else parent.appendChild(el);
+    // 칸이 끼어들거나 빠져도 같은 요소는 새로 만들지 않는다. 마우스 아래의 버튼과 스크롤이 그대로 남는다
+    let at = cur;
+    while (at && !same(at, v) && !usedLater(at, list, i)) {
+      parent.removeChild(at);
+      at = parent.childNodes[i];
     }
+    if (at && same(at, v)) {
+      update(at, v);
+      continue;
+    }
+    let el = at ? at.nextSibling : null;
+    while (el && !same(el, v)) el = el.nextSibling;
+    if (el) update(el, v);
+    else el = create(v);
+    parent.insertBefore(el, at || null);
   }
   while (parent.childNodes.length > i) parent.removeChild(parent.lastChild);
 }

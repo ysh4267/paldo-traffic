@@ -125,7 +125,7 @@ svg { display: block; width: 100%; height: 100%; }
 #areabar small { color: var(--muted); font-size: 12px; font-weight: 500; }
 
 /* ── 정보 카드 ───────────────────────── */
-#inspector { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(max(12px, env(safe-area-inset-top, 0px)) + 42px); max-height: calc(100vh - 112px); width: 304px; display: flex; flex-direction: column; background: var(--card); border-radius: 3px; box-shadow: 0 1px 2px rgba(60, 50, 30, .1), 0 8px 24px rgba(60, 50, 30, .12); overflow: hidden; }
+#inspector { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(max(12px, env(safe-area-inset-top, 0px)) + 42px); max-height: calc(100vh - 112px); width: 304px; display: flex; flex-direction: column; line-height: 1.3; background: var(--card); border-radius: 3px; box-shadow: 0 1px 2px rgba(60, 50, 30, .1), 0 8px 24px rgba(60, 50, 30, .12); overflow: hidden; }
 .p-head { display: flex; align-items: center; gap: 10px; padding: 12px 10px 8px 14px; flex: none; }
 .p-head > .ico { width: 28px; height: 28px; }
 .p-head .site-ico { width: 34px; height: 34px; }
@@ -212,19 +212,44 @@ svg { display: block; width: 100%; height: 100%; }
 .more-btn:hover { color: var(--ink); }
 .more-btn .ico { width: 9px; height: 9px; }
 
-.list-tools { flex: none; display: flex; flex-direction: column; gap: 5px; padding: 0 14px 8px; }
+.list-tools { display: flex; flex-direction: column; gap: 5px; }
 .list-search { width: 100%; height: 28px; padding: 0 9px; border: 0; border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; box-shadow: inset 0 0 0 1.5px var(--faint); }
 .list-search::placeholder { color: var(--muted); }
 .list-search:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--ink); }
-.list-line { display: flex; align-items: center; gap: 6px; }
-.list-line .seg { flex: 1; min-width: 0; }
-.list-label { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); }
+.list-line { display: flex; align-items: flex-start; gap: 6px; }
+.list-line .seg, .list-line .chips { flex: 1; min-width: 0; }
+.list-label { flex: none; width: 26px; line-height: 24px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .chip { flex: none; height: 24px; padding: 0 8px; border-radius: 2px; font-size: 12px; font-weight: 600; color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--faint); transition: background-color .16s ease, color .16s ease, box-shadow .16s ease; }
 .chip:hover { color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
 .chip.on { background: var(--ink); color: var(--paper); box-shadow: none; }
 .chip.some { color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.sec > .btn.buy { justify-content: space-between; }
+.pick-line { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-top: 5px; border-top: 1.5px solid var(--line); }
+.pick-all { display: flex; align-items: center; min-width: 0; font-size: 12.5px; font-weight: 600; text-align: left; }
+.pick-all:disabled { color: var(--muted); cursor: not-allowed; }
+.pick-all .tick-box { margin: 0 11px 0 5px; }
+.pick-row { display: grid; grid-template-columns: 26px 1fr; align-items: center; }
+.tick { flex: none; display: grid; place-items: center; width: 26px; height: 28px; }
+.tick-box { position: relative; flex: none; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 2px; color: var(--paper); box-shadow: inset 0 0 0 1.5px var(--faint); transition: background-color .12s ease, box-shadow .12s ease; }
+.tick:hover .tick-box, .pick-all:hover:not(:disabled) .tick-box { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.tick-box.on { background: var(--ink); box-shadow: none; }
+.tick-box.some { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.tick-box.some::after { content: ""; width: 8px; height: 2px; background: var(--ink); }
+.tick-box .ico { width: 11px; height: 11px; }
+.sec > h3 .h-left { display: inline-flex; align-items: center; font-weight: 600; }
+.list-foot { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; border-top: 1.5px solid var(--line); }
+.foot-top { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.foot-top b { font-weight: 700; white-space: nowrap; }
+.foot-top small { min-width: 0; color: var(--muted); font-size: 12px; }
+.foot-top .chips { flex: none; flex-wrap: nowrap; margin-left: auto; }
+.foot-buy { display: grid; grid-template-columns: 28px 1fr; gap: 4px; }
+.foot-buy .sell { width: 28px; padding: 0; box-shadow: none; color: var(--muted); }
+.foot-buy .sell:hover:not(:disabled) { box-shadow: none; background: var(--line); color: var(--ink); }
+.foot-buy .sell .ico { width: 11px; height: 11px; }
+.list-foot .btn-row .btn { gap: 4px; padding: 4px 7px; font-size: 12px; }
+.seg-pair { display: flex; gap: 8px; }
+.seg-pair .seg { flex: 1; min-width: 0; }
+.list-foot .btn.buy { justify-content: space-between; }
 .list-row { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: center; padding: 4px 0; text-align: left; width: 100%; font-size: 13px; font-weight: 500; }
 .list-row:hover .t { text-decoration: underline; }
 .list-row .ico { width: 20px; height: 20px; }
@@ -411,6 +436,11 @@ button:active:not(:disabled) { transform: scale(.94); }
 @keyframes dotin { from { transform: scale(0); } }
 @keyframes bump { 40% { transform: scale(1.3); } }
 
+/* 세로가 넉넉하면 조건을 늘 보이게 둔다 */
+@media (min-width: 761px) and (min-height: 900px) {
+  .list-tools { position: sticky; top: -2px; z-index: 1; padding: 2px 0 6px; background: var(--card); }
+}
+
 /* ── 좁은 화면 ───────────────────────── */
 @media (max-width: 1000px) {
   #goal .track { width: 110px; }
@@ -440,6 +470,8 @@ button:active:not(:disabled) { transform: scale(.94); }
   #menu button { width: 30px; height: 30px; }
   #menu button .ico { width: 16px; height: 16px; }
   #inspector { left: 6px; right: 6px; width: auto; top: auto; bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + 46px); max-height: 46%; z-index: 3; }
+  #inspector.is-list { max-height: 60%; }
+  #inspector.is-list.picking { max-height: 46%; }
   #mini, #zoomctl { display: none !important; }
   #osm { right: 12px; bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + 50px); }
   #toasts { left: 12px; right: 12px; top: auto; bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + 86px); width: auto; }

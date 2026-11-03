@@ -116,6 +116,12 @@ function bulkCheck(list) {
   let n = 0;
   for (const q of picked) n += g.convertTrucks(q, to).n;
   bad = bad || n !== conv.n || Math.abs(m1 - g.money - conv.cost) > 1 || g.money < -1;
+  const sites = g.sites.filter((s) => s.available && s.produces && rnd() < 0.05);
+  g.money = rnd() < 0.5 ? money : g.planSites(sites, (s) => g.upgradeCost(s)).full * rnd();
+  const up = g.planSites(sites, (s) => g.upgradeCost(s));
+  const m2 = g.money;
+  for (const s of up.list) if (!g.buyUpgrade(s)) bad = true;
+  bad = bad || Math.abs(m2 - g.money - up.cost) > 1;
   g.money = money;
   if (bad) console.log('일괄 값이 미리 보여 준 것과 다릅니다', { want: buy.n, got: got.n, cost: buy.cost, paid: got.paid, convWant: conv.n, convGot: n });
   return bad ? 1 : 0;

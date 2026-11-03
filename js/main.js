@@ -9,6 +9,7 @@ import { iconHtml } from './render/art.js';
 const SAVE_KEY = 'paldo-traffic-save-v1';
 const SETTINGS_KEY = 'paldo-traffic-settings';
 const STEP = 1 / 60;
+const LONG_PRESS = 350; // 손가락으로 이만큼(ms) 눌렀다 끌면 범위를 고른다
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -123,7 +124,7 @@ class App {
     if (this.settings.musicOn !== undefined) this.sound.musicOn = this.settings.musicOn;
   }
   saveSettings() {
-    store.set(SETTINGS_KEY, JSON.stringify({ vol: this.sound.volume, music: this.sound.musicVolume, musicOn: this.sound.musicOn, pal: this.renderer.palName }));
+    store.set(SETTINGS_KEY, JSON.stringify({ vol: this.sound.volume, music: this.sound.musicVolume, musicOn: this.sound.musicOn, pal: this.renderer.palName, dragPan: !!this.settings.dragPan }));
   }
 
   setSpeed(v) {
@@ -147,8 +148,10 @@ class App {
   applyCameraPadding() {
     const narrow = window.innerWidth < 760;
     const cam = this.renderer.cam;
-    const card = this.ui && (this.ui.sel || this.ui.listOpen || this.ui.tool === 'fleet');
-    if (narrow) cam.pad = { l: 8, r: 8, t: 84, b: card ? Math.round(window.innerHeight * 0.46) + 56 : 92 };
+    const card = this.ui && (this.ui.sel || this.ui.listOpen);
+    // 좁은 화면에서 목록은 더 크게 열리고, 지도에서 고를 때만 지도를 넓게 내준다
+    const share = this.ui && this.ui.listOpen && this.ui.tool !== 'fleet' ? 0.6 : 0.46;
+    if (narrow) cam.pad = { l: 8, r: 8, t: 84, b: card ? Math.round(window.innerHeight * share) + 56 : 92 };
     else cam.pad = { l: 16, r: card ? 336 : 16, t: 60, b: 70 };
   }
 
@@ -202,11 +205,11 @@ class App {
     c.addEventListener('pointerdown', (e) => {
       this.sound.unlock();
       c.setPointerCapture(e.pointerId);
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, button: e.button, type: e.pointerType });
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, button: e.button, type: e.pointerType, t0: performance.now() });
       if (this.pointers.size === 2) {
         this.pinch = null;
         // 두 손가락이 되면 범위 고르기를 그만두고 지도를 움직인다
-        for (const q of this.pointers.values()) q.boxing = false;
+        for (const q of this.pointers.values()) { q.boxing = false; q.box = false; }
         if (this.ui.area && !this.ui.area.pending) this.ui.clearArea();
       }
       this.painted = new Set();
@@ -230,8 +233,9 @@ class App {
       }
       if (!p.moved) return;
       const tool = this.ui.tool;
-      // 차로 도구와 트럭 일괄은 끌어서 범위를 고른다. 차로는 Shift를 누르면 지나간 도로만 칠한다 (오른쪽 버튼은 언제나 지도 이동)
-      if ((tool === 'lane' || tool === 'fleet') && p.button === 0) {
+      // 처음 움직일 때 범위를 고를지 지도를 옮길지 정한다. 차로는 Shift를 누르면 지나간 도로만 칠한다
+      if (p.box === undefined) p.box = this.wantsBox(p, e);
+      if (p.box) {
         if (tool === 'lane' && e.shiftKey && p.type === 'mouse' && !p.boxing) {
           const hit = this.renderer.pick(e.clientX, e.clientY, tool);
           if (hit && hit.road && !this.painted.has(hit.road)) { this.painted.add(hit.road); this.ui.applyAt(hit); }
@@ -266,12 +270,17 @@ class App {
           return;
         }
         const hit = this.renderer.pick(e.clientX, e.clientY, this.ui.tool);
-        if (!this.painted.size) this.ui.applyAt(hit);
-      } else if (this.pointers.size === 0 && !p.moved && p.button === 2 && this.ui.tool !== 'select') {
-        // 우클릭은 범위를 먼저 풀고, 그다음 설치를 취소한다. 끌면 지도 이동이다
-        this.sound.click();
-        if (this.ui.area) this.ui.clearArea();
-        else this.ui.setTool('select');
+        if (!this.painted.size) this.ui.applyAt(hit, e);
+      } else if (this.pointers.size === 0 && !p.moved && p.button === 2) {
+        // 우클릭은 범위를 먼저 풀고, 그다음 설치나 여러 거점 선택을 취소한다
+        if (this.ui.tool !== 'select') {
+          this.sound.click();
+          if (this.ui.area) this.ui.clearArea();
+          else this.ui.setTool('select');
+        } else if (this.ui.listOpen && this.ui.listPicked) {
+          this.sound.click();
+          this.ui.setList(false);
+        }
       }
     };
     c.addEventListener('pointerup', end);
@@ -310,6 +319,17 @@ class App {
       cam().focus(x, y);
     };
     this.mini.addEventListener('pointerdown', jump);
+  }
+
+  // 끌었을 때 범위를 고르는지 본다. 차로 도구와 눌러서 고르기는 왼쪽 버튼, 기본 도구는 설정을 따른다.
+  // 손가락은 지도를 옮기는 일이 먼저라 길게 눌렀다 끌 때만 고른다
+  wantsBox(p, e) {
+    const tool = this.ui.tool;
+    if (tool === 'lane' || tool === 'fleet') return p.button === 0;
+    if (tool !== 'select') return false;
+    if (p.type !== 'mouse') return performance.now() - p.t0 > LONG_PRESS;
+    if (e.shiftKey) return false;
+    return p.button === (this.settings.dragPan ? 2 : 0);
   }
 
   onHover(x, y) {

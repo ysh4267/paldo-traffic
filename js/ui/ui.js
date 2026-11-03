@@ -14,13 +14,16 @@ export const TOOLS = [
   { id: 'interchange', icon: 't_interchange', color: '#9a4fc4', name: '입체교차로', key: '6', tech: 'interchange', desc: '교차 흐름을 입체로 분리합니다. 같은 차로로 합류할 때만 양보합니다.' },
   { id: 'lane', icon: 't_lane', color: '#e0752b', name: '차로 추가', key: '7', desc: '도로를 눌러 양방향으로 한 차로씩 늘립니다. 끌어서 범위를 고르면 그 안의 도로를 한 번에 늘립니다. Shift를 누른 채 끌면 지나간 도로만 늘립니다.' },
   { id: 'remove', icon: 't_remove', color: '#8a857a', name: '원상복구', key: '8', desc: '교차로의 표지·신호를 없애 기본 상태로 돌립니다. 설치비는 돌려받지 못합니다.' },
-  { id: 'fleet', icon: 't_fleet', color: '#3f7fb8', name: '트럭 일괄', menu: true },
+  { id: 'fleet', icon: 't_fleet', color: '#3f7fb8', name: '눌러서 고르기', menu: true },
 ];
 
 const LIST_KINDS = [['all', '전체'], ['raw', '원료'], ['factory', '공장'], ['dest', '납품처']];
 const LIST_SORTS = [['region', '권역'], ['state', '상태'], ['name', '이름'], ['trucks', '트럭'], ['income', '수익'], ['stock', '창고']];
 // 상태순으로 볼 때 위에서부터 놓는 순서. 급한 것이 먼저다
 const LIST_STATES = ['원료 없음', '트럭 없음', '트럭 부족', '화물 부족', '원활', '정상'];
+const STATE_TIPS = { '원료 없음': '원료가 없어 멈춘 공장', '트럭 없음': '트럭이 한 대도 없는 거점', '트럭 부족': '창고에 화물이 쌓이는 거점', '화물 부족': '트럭이 화물을 기다리는 거점', 원활: '잘 돌아가는 거점', 정상: '납품받는 곳' };
+// 트럭을 더할 노선
+const BUY_ON = [['running', '달리는 곳', '달리는 노선마다 더합니다. 트럭이 없는 거점은 가장 잘 버는 노선을 엽니다.'], ['empty', '빈 곳', '트럭이 없는 노선을 모두 엽니다.'], ['all', '전부', '거점의 모든 노선에 더합니다.']];
 const slotName = (slot) => (slot.length === 1 ? GOODS[slot[0]].name : '농수산물');
 const CITY_STAGE_NAME = ['마을', '읍내', '소도시', '중도시', '대도시', '메가시티'];
 const CONTROL_NAME = { auto: '비보호 교차로', signal: '신호 교차로', roundabout: '회전교차로', interchange: '입체교차로' };
@@ -55,11 +58,14 @@ export class UI {
     this.modalName = null;
     this.modalData = null;
     this.listOpen = false;
-    this.listView = { q: '', kind: 'all', problem: false, sort: 'region' };
+    this.listView = { q: '', kind: 'all', regions: [], states: [], empty: false, sort: 'region' };
     this.listOrder = null;
-    this.fleetTo = null;
+    this.listBack = false;
+    this.listPicked = false; // 고른 거점만 보며 공용 메뉴를 쓰는 중
+    this.holds = {};
+    this.panHints = 0;
     this.fleetPick = new Set();
-    this.bulkNeed = false;
+    this.buyOn = 'running';
     this.more = false;
     this.showStats = false;
     this.confirmReset = false;
@@ -109,7 +115,7 @@ export class UI {
       if (e.key === ' ') { e.preventDefault(); this.app.setSpeed(this.app.speed === 0 ? (this.app.lastSpeed || 1) : 0); }
       if (e.key === 'r' || e.key === 'R') this.openModal('research');
       if (e.key === 'b' || e.key === 'B') this.openModal('build');
-      if (e.key === 'l' || e.key === 'L') this.setList(!this.listOpen);
+      if (e.key === 'l' || e.key === 'L') this.toggleList();
       if (e.key === 't' || e.key === 'T') this.pickTool(TOOLS.find((q) => q.id === 'fleet'));
       if (e.key === 'm' || e.key === 'M') this.setMusic(!this.sound.musicOn);
     });
@@ -118,9 +124,18 @@ export class UI {
   // ── 상태 변경 ──────────────────────────────────────
   select(sel) {
     if (sel && this.tool === 'fleet') this.setTool('select');
+    // 목록에서 연 카드를 닫으면 목록으로 돌아간다
+    if (sel && this.listOpen) this.listBack = true;
     this.sel = sel;
     this.r.selection = sel;
+    this.holds = {};
     if (sel) this.listOpen = false;
+    else if (this.listBack) {
+      this.listBack = false;
+      this.listOpen = true;
+      this.listOrder = null;
+    }
+    this.syncListMap();
     this.app.applyCameraPadding();
     this.updateHighlights();
     this.renderInspector(true);
@@ -128,14 +143,43 @@ export class UI {
     this.el.insp.querySelector('.p-body')?.scrollTo(0, 0);
   }
 
-  setList(open) {
-    if (open && this.tool === 'fleet') this.setTool('select');
+  setList(open, picked = false) {
     this.listOpen = open;
+    this.listPicked = open && picked;
     this.listOrder = null;
+    this.listBack = false;
+    // 새로 열 때 사는 노선은 지금 조건에 맞춘다
+    if (open) this.buyOn = !picked && this.listView.empty ? 'empty' : 'running';
+    // 닫으면 고른 것도 풀린다. 보이지 않게 남아 있으면 다음 선택에 섞인다
+    if (!open) this.fleetPick.clear();
+    if (!open && this.tool === 'fleet') this.setTool('select');
     if (open && this.sel) { this.sel = null; this.r.selection = null; this.updateHighlights(); }
+    this.syncListMap();
     this.app.applyCameraPadding();
     this.renderInspector(true);
     this.renderTop();
+  }
+
+  // 고른 거점과 조건 밖 거점은 목록이 열려 있을 때만 지도에 보인다
+  syncListMap() {
+    this.r.fleetPick = this.listOpen || this.listBack ? this.fleetPick : null;
+    if (!this.listOpen) this.r.siteMatch = null;
+  }
+  // 고른 곳만 보고 있으면 닫지 않고 거점 목록으로 넓힌다
+  toggleList() {
+    if (this.listOpen && this.listPicked) {
+      this.listPicked = false;
+      this.listOrder = null;
+      this.renderInspector(true);
+      return;
+    }
+    this.setList(!this.listOpen);
+  }
+  // 카드 위에 마우스가 있는 동안에는 칸이 생기거나 사라지지 않게 한다. 누르려던 버튼이 밀려나지 않는다
+  hold(key, value) {
+    if (key in this.holds && this.el.insp.matches(':hover')) return this.holds[key];
+    this.holds[key] = value;
+    return value;
   }
 
   toggleStats() {
@@ -169,7 +213,7 @@ export class UI {
   }
 
   setTool(id) {
-    const panel = id === 'fleet' || this.tool === 'fleet';
+    const picking = id === 'fleet' || this.tool === 'fleet';
     this.area = null;
     this.r.area = null;
     this.renderAreaBar();
@@ -179,36 +223,39 @@ export class UI {
     this.r.toolColor = id === 'remove' ? '#d9412b' : '#3f7fb8';
     this.r.baseDirty = true;
     document.getElementById('map').classList.toggle('placing', id !== 'select');
-    // 트럭 일괄은 정보 카드 자리를 쓴다. 고른 거점은 닫았다 열어도 남는다
-    if (panel) {
-      if (id === 'fleet') {
-        this.sel = null;
-        this.r.selection = null;
-        this.listOpen = false;
-      }
-      this.r.fleetPick = id === 'fleet' ? this.fleetPick : null;
+    // 지도에서 고르기는 거점 목록과 함께 쓴다
+    if (id === 'fleet' && !this.listOpen) this.setList(true);
+    if (picking) {
       this.app.applyCameraPadding();
-      this.updateHighlights();
       this.renderInspector(true);
-      this.renderTop();
     }
     this.renderDock();
     this.updateHint(null);
   }
 
   // 지도 클릭 처리
-  applyAt(hit) {
+  applyAt(hit, e) {
     const g = this.game, r = this.r;
     const tool = this.tool;
     if (tool === 'select') {
+      // Shift나 Ctrl을 누르고 누른 거점은 여러 거점 선택에 넣고 뺀다
+      if (hit && hit.type === 'site' && hit.site.produces && e && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+        this.pickOnMap([hit.site]);
+        return;
+      }
       this.sound.click();
-      if (!hit) { this.select(null); return; }
+      if (!hit) {
+        // 빈 곳을 누르면 여러 거점 선택을 푼다
+        if (this.listOpen && this.listPicked) this.setList(false);
+        else this.select(null);
+        return;
+      }
       this.select(hit);
       return;
     }
     if (!hit) return;
     if (tool === 'fleet') {
-      this.toggleBulk([hit.site]);
+      this.pickOnMap([hit.site]);
       this.updateHint(hit);
       return;
     }
@@ -297,7 +344,7 @@ export class UI {
   // ── 범위 차로 추가 ─────────────────────────────────
   // 끄는 동안 사각형 안의 도로를 모아 미리 보여 준다. 막히는 도로가 앞에 온다
   dragArea(x0, y0, x1, y1) {
-    if (this.tool === 'fleet') {
+    if (this.tool === 'fleet' || this.tool === 'select') {
       this.dragBulk(x0, y0, x1, y1);
       return;
     }
@@ -331,10 +378,11 @@ export class UI {
   }
   finishArea() {
     if (!this.area) return;
-    if (this.tool === 'fleet') {
+    if (this.tool === 'fleet' || this.tool === 'select') {
       const list = [...this.area.sites];
       this.clearArea();
-      if (list.length) this.toggleBulk(list);
+      if (list.length) this.pickOnMap(list);
+      else if (this.tool === 'select') this.panHint();
       return;
     }
     if (!this.area.roads.length) {
@@ -471,16 +519,15 @@ export class UI {
     patch(this.el.menu, [
       btn('research', '연구 (R)', () => this.openModal('research'), researchReady),
       btn('build', '우회도로·대교 건설 (B)', () => this.openModal('build'), buildReady),
-      btn('list', '거점 목록 (L)', () => { this.sound.click(); this.setList(!this.listOpen); }, false, this.listOpen),
-      g.truckCount >= 3 && btn('t_fleet', '트럭 일괄 (T)\n여러 구역을 골라 트럭을 한 번에 사거나 바꿉니다', () => this.pickTool(TOOLS.find((t) => t.id === 'fleet')), false, this.tool === 'fleet'),
+      btn('list', '거점 목록 (L)', () => { this.sound.click(); this.toggleList(); }, false, this.listOpen),
       btn(this.sound.musicOn ? 'sound' : 'mute', this.sound.musicOn ? `배경음 끄기 (M)\n지금 곡: ${this.sound.track.title}` : '배경음 켜기 (M)', () => this.setMusic(!this.sound.musicOn)),
       btn('gear', '설정과 저장', () => this.openModal('settings')),
-    ].filter(Boolean));
+    ]);
   }
 
   // 지금 손대면 좋은 곳을 한 줄씩 알려 준다
   renderTodo() {
-    const show = !this.sel && !this.listOpen && this.tool !== 'fleet' && !this.modalName && this.game.flags.tutorial !== true;
+    const show = !this.sel && !this.listOpen && !this.modalName && this.game.flags.tutorial !== true;
     const list = show ? this.advice() : [];
     patch(this.el.todo, list.map((a, i) => h('button', { class: `todo ${a.tone || ''}`, key: `t${i}${a.title}`, onclick: a.go, 'data-tip': a.sub }, h('i'), h('span', null, a.title))));
   }
@@ -533,14 +580,15 @@ export class UI {
     }
     const sel = this.sel;
     let view = null;
-    if (this.tool === 'fleet') view = this.bulkView();
-    else if (sel) {
+    if (sel) {
       if (sel.type === 'site') view = this.siteView(sel.site);
       else if (sel.type === 'node' || sel.type === 'approach') view = this.nodeView(sel.node);
       else if (sel.type === 'road') view = this.roadView(sel.road);
       else if (sel.type === 'project') view = this.projectView(sel.project);
     } else if (this.listOpen) view = this.overviewView();
     const el = this.el.insp;
+    el.classList.toggle('is-list', !sel && this.listOpen);
+    el.classList.toggle('picking', this.tool === 'fleet');
     if (!view) {
       if (!el.hidden && !this.inspClosing) {
         this.inspClosing = true;
@@ -608,77 +656,107 @@ export class UI {
     return [income, income > 0 ? `${fmtWon(income)}/분` : ''];
   }
 
-  // 조건에 맞는 거점을 고르고 정렬한다
-  listSites() {
+  // 거점의 빈 노선. 납품처는 들어오는 노선으로 본다
+  emptyRoutes(s) { return this.siteRoutes(s).filter((q) => q.valid && !q.trucks.length); }
+
+  // 조건에 맞는 거점. skip에 적은 조건은 보지 않는다 (버튼에 보일 개수를 셀 때 쓴다)
+  listMatch(skip = '') {
     const g = this.game, f = this.listView;
     const q = f.q.trim();
-    const list = g.sites.filter((s) => {
+    return g.sites.filter((s) => {
       if (!s.available) return false;
       if (f.kind === 'raw' && !(s.produces && !s.inputs)) return false;
       if (f.kind === 'factory' && !(s.produces && s.inputs)) return false;
       if (f.kind === 'dest' && s.produces) return false;
-      if (f.problem && this.siteStatus(s).tone === 'ok') return false;
+      if (f.regions.length && !f.regions.includes(s.region)) return false;
+      if (skip !== 'states' && f.states.length && !f.states.includes(this.siteStatus(s).short)) return false;
+      if (skip !== 'empty' && f.empty && !this.emptyRoutes(s).length) return false;
       if (!q) return true;
       return `${s.name} ${g.regions[s.region].short} ${SITE_KIND_NAME[s.kind]} ${s.produces ? GOODS[s.goods].name : ''}`.includes(q);
     });
+  }
+  // 조건에 맞는 거점을 정렬한다
+  listSites() {
+    const list = this.listPicked ? [...this.fleetPick] : this.listMatch();
     const by = {
       state: (a, b) => LIST_STATES.indexOf(this.siteStatus(a).short) - LIST_STATES.indexOf(this.siteStatus(b).short) || this.stateMeasure(b)[0] - this.stateMeasure(a)[0],
       name: (a, b) => a.name.localeCompare(b.name, 'ko'),
       trucks: (a, b) => this.siteTruckCount(b) - this.siteTruckCount(a),
       income: (a, b) => this.siteIncome(b) - this.siteIncome(a),
       stock: (a, b) => this.siteStockFrac(b) - this.siteStockFrac(a),
-    }[f.sort];
+    }[this.listPicked ? 'state' : this.listView.sort];
     return by ? list.sort(by) : list;
   }
 
-  listRow(s) {
-    const g = this.game, f = this.listView;
-    const st = this.siteStatus(s);
-    let right = st.tone !== 'ok' ? st.short : '';
-    if (f.sort === 'state') right = this.stateMeasure(s)[1];
-    if (f.sort === 'trucks') right = `${this.siteTruckCount(s)}대`;
-    if (f.sort === 'income') right = `${fmtWon(this.siteIncome(s))}/분`;
-    if (f.sort === 'stock') right = s.produces ? `${Math.round(this.siteStockFrac(s) * 100)}%` : '';
-    const tip = s.produces ? `${GOODS[s.goods].name} · 트럭 ${this.siteTruckCount(s)}대` : `${SITE_KIND_NAME[s.kind]} · 납품 트럭 ${this.siteTruckCount(s)}대`;
-    return h('button', { class: 'list-row', key: s.id, onclick: () => this.goSite(s), 'data-tip': `${tip}${st.tone !== 'ok' ? `\n${st.short}` : ''}` },
-      raw(siteIcon(s), 'ico'), h('span', { class: 't' }, s.name), right && h('span', { class: `state ${st.tone === 'ok' ? '' : st.tone}`.trim() }, right));
+  // 거점을 고르는 칸. 여러 곳을 묶은 칸은 일부만 골라져 있으면 가운데 줄로 보여 준다
+  tickState(list) {
+    const n = list.filter((s) => this.fleetPick.has(s)).length;
+    return list.length > 0 && n === list.length ? 'on' : n ? 'some' : '';
+  }
+  tickMark(list) {
+    const state = this.tickState(list);
+    return h('span', { class: `tick-box ${state}`.trim(), key: 'box' }, state === 'on' && ico('check'));
+  }
+  tickBtn(list, label) {
+    const state = this.tickState(list);
+    return h('button', { class: 'tick', key: 'tick', role: 'checkbox', 'aria-checked': state === 'on' ? 'true' : state ? 'mixed' : 'false', 'aria-label': label, onclick: () => this.toggleBulk(list) }, this.tickMark(list));
   }
 
-  // 검색과 필터, 정렬 막대
-  listTools() {
-    const f = this.listView;
+  listRow(s) {
+    const f = this.listView, sort = this.listPicked ? 'state' : f.sort;
+    const st = this.siteStatus(s);
+    const empty = this.emptyRoutes(s);
+    let right = st.tone !== 'ok' ? st.short : '';
+    if (sort === 'state') right = this.stateMeasure(s)[1];
+    // 빈 노선을 찾는 중이면 몇 개가 비었는지가 먼저다
+    if (!this.listPicked && f.empty && empty.length) right = `빈 노선 ${empty.length}개`;
+    if (sort === 'trucks') right = `${this.siteTruckCount(s)}대`;
+    if (sort === 'income') right = `${fmtWon(this.siteIncome(s))}/분`;
+    if (sort === 'stock') right = s.produces ? `${Math.round(this.siteStockFrac(s) * 100)}%` : '';
+    const tip = s.produces ? `${GOODS[s.goods].name} · 트럭 ${this.siteTruckCount(s)}대` : `${SITE_KIND_NAME[s.kind]} · 납품 트럭 ${this.siteTruckCount(s)}대`;
+    const names = empty.map((q) => (s.produces ? q.to : q.from).name);
+    const emptyTip = names.length ? `\n빈 노선: ${names.slice(0, 4).join(', ')}${names.length > 4 ? ` 외 ${names.length - 4}개` : ''}` : '';
+    return h('div', { class: 'pick-row', key: s.id },
+      s.produces ? this.tickBtn([s], `${s.name} 고르기`) : h('span', { class: 'tick-none', key: 'tick' }),
+      h('button', { class: 'list-row', key: 'go', onclick: () => this.goSite(s), 'data-tip': `${tip}${st.tone !== 'ok' ? `\n${st.short}` : ''}${emptyTip}` },
+        raw(siteIcon(s), 'ico'), h('span', { class: 't' }, s.name), right && h('span', { class: `state ${st.tone === 'ok' ? '' : st.tone}`.trim() }, right)));
+  }
+
+  chipBtn(key, on, label, tip, onclick) {
+    return h('button', { key, class: `chip${on ? ' on' : ''}`, 'aria-pressed': on ? 'true' : 'false', 'data-tip': tip, onclick }, label);
+  }
+  mapChip() {
+    return this.chipBtn('map', this.tool === 'fleet', '눌러서 고르기', '켜면 거점을 누를 때마다 넣고 뺍니다. 휴대폰에서는 한 손가락으로 끌어 고릅니다. (T)', () => this.pickTool(TOOLS.find((t) => t.id === 'fleet')));
+  }
+
+  // 검색과 조건, 정렬, 고르기
+  listTools(sites, filtering) {
+    const g = this.game, f = this.listView, counts = this.listCounts;
     const set = (k, v) => { f[k] = v; this.sound.click(); this.renderInspector(true); };
+    // 여러 개를 켤 수 있는 조건. 하나도 안 켜면 전부 보여 준다
+    const flip = (k, v) => set(k, f[k].includes(v) ? f[k].filter((q) => q !== v) : [...f[k], v]);
+    const chip = (...a) => this.chipBtn(...a);
+    const line = (key, label, kid) => h('div', { class: 'list-line', key }, h('span', { class: 'list-label' }, label), kid);
+    const regions = g.regions.filter((r) => r.unlocked);
+    const can = sites.filter((s) => s.produces);
+    const state = this.tickState(can);
     return h('div', { class: 'list-tools', key: 'tools' },
       h('input', {
         class: 'list-search', key: 'q', type: 'search', placeholder: '이름, 권역, 화물로 찾기', value: f.q, 'aria-label': '거점 찾기',
         oninput: (e) => { f.q = e.target.value; this.renderInspector(true); },
         onkeydown: (e) => { if (e.key === 'Escape') { if (f.q) { f.q = ''; this.renderInspector(true); } else e.target.blur(); } },
       }),
-      h('div', { class: 'list-line', key: 'kinds' },
-        h('div', { class: 'seg' }, LIST_KINDS.map(([id, label]) => h('button', { key: id, class: f.kind === id ? 'on' : '', onclick: () => set('kind', id) }, label))),
-        h('button', { key: 'bad', class: `chip${f.problem ? ' on' : ''}`, 'aria-pressed': f.problem ? 'true' : 'false', 'data-tip': '트럭이나 화물, 원료가 모자라 손봐야 할 곳만 봅니다', onclick: () => set('problem', !f.problem) }, '문제만')),
-      h('div', { class: 'list-line', key: 'sorts' },
-        h('span', { class: 'list-label' }, '정렬'),
-        h('div', { class: 'seg' }, LIST_SORTS.map(([id, label]) => h('button', { key: id, class: f.sort === id ? 'on' : '', onclick: () => set('sort', id) }, label)))));
+      line('kinds', '종류', h('div', { class: 'seg' }, LIST_KINDS.map(([id, label]) => h('button', { key: id, class: f.kind === id ? 'on' : '', onclick: () => set('kind', id) }, label)))),
+      regions.length > 1 && line('regions', '권역', h('div', { class: 'chips' }, regions.map((r) => chip(`r${r.index}`, f.regions.includes(r.index), r.short, `${r.name} 거점을 봅니다`, () => flip('regions', r.index))))),
+      line('states', '상태', h('div', { class: 'chips' }, LIST_STATES.filter((st) => counts[st] || f.states.includes(st)).map((st) => chip(st, f.states.includes(st), `${st} ${counts[st] || 0}`, STATE_TIPS[st], () => flip('states', st))))),
+      line('routes', '노선', h('div', { class: 'chips' }, chip('empty', f.empty, `빈 노선 있음 ${counts.empty}`, '트럭이 한 대도 없는 노선이 있는 거점만 봅니다', () => { this.buyOn = f.empty ? 'running' : 'empty'; set('empty', !f.empty); }))),
+      line('sorts', '정렬', h('div', { class: 'seg' }, LIST_SORTS.map(([id, label]) => h('button', { key: id, class: f.sort === id ? 'on' : '', onclick: () => set('sort', id) }, label)))),
+      h('div', { class: 'pick-line', key: 'pick' },
+        h('button', { class: 'pick-all', key: 'all', disabled: !can.length, role: 'checkbox', 'aria-checked': state === 'on' ? 'true' : state ? 'mixed' : 'false', 'data-tip': '납품처에는 트럭을 둘 수 없어 고르지 않습니다', onclick: () => this.toggleBulk(can) },
+          this.tickMark(can), can.length ? `${filtering ? '조건에 맞는' : '전체'} ${can.length}곳 고르기` : '고를 거점이 없습니다'),
+        this.mapChip()));
   }
 
-  // 전국 트럭을 더 많이 싣는 차종으로 한꺼번에 바꾼다
-  fleetSec() {
-    const g = this.game;
-    const routes = [...g.routes.values()].filter((q) => q.valid && q.trucks.length);
-    const targets = TRUCKS.map((m, i) => i).filter((i) => g.modelUnlocked(i) && routes.some((q) => g.convertibleTrucks(q, i).length));
-    if (!targets.length) return null;
-    if (!targets.includes(this.fleetTo)) this.fleetTo = targets.reduce((a, b) => (TRUCKS[b].cap > TRUCKS[a].cap ? b : a));
-    const to = this.fleetTo;
-    const plan = g.planConvert(routes, to);
-    return h('div', { class: 'sec', key: 'fleet' },
-      this.convertTitle('전국 트럭 전환', plan),
-      targets.length > 1 && h('div', { class: 'seg', key: 'to' }, targets.map((i) => h('button', { key: TRUCKS[i].id, class: to === i ? 'on' : '', 'data-tip': `${TRUCKS[i].name}으로 바꿉니다. 적재 ${TRUCKS[i].cap}t`, onclick: () => { this.fleetTo = i; this.sound.click(); this.renderInspector(true); } }, TRUCKS[i].short))),
-      this.convertBtn(plan, routes, to));
-  }
-  convertTitle(title, plan) {
-    return h('h3', null, title, plan.n < plan.all && h('span', null, plan.n ? `자금이 모자라 ${plan.all}대 중 ${plan.n}대만` : '자금 부족'));
-  }
   convertBtn(plan, routes, to) {
     const names = (set) => [...set].sort((a, b) => a.cap - b.cap).map((t) => t.short).join('·');
     return h('button', {
@@ -713,11 +791,7 @@ export class UI {
     this.renderTop();
   }
 
-  // ── 트럭 일괄 ──────────────────────────────────────
-  // 트럭을 둘 수 있는 거점. region을 주면 그 권역만 고른다
-  bulkSites(region = null) {
-    return this.game.sites.filter((s) => s.available && s.produces && (region === null || s.region === region));
-  }
+  // ── 여러 거점 고르기 ───────────────────────────────
   // 전부 골라져 있으면 빼고, 아니면 모두 더한다
   toggleBulk(list) {
     const drop = list.every((s) => this.fleetPick.has(s));
@@ -726,16 +800,35 @@ export class UI {
       else this.fleetPick.add(s);
     }
     this.sound.click();
+    // 고른 곳만 보던 중에 다 빠지면 닫는다
+    if (this.listPicked && !this.fleetPick.size) {
+      this.setList(false);
+      return;
+    }
     this.renderInspector(true);
   }
-  // 끄는 동안 범위 안의 거점을 미리 보여 준다. 손을 떼면 toggleBulk로 더하거나 뺀다
+  // 지도에서 고르면 공용 메뉴가 바로 뜬다
+  pickOnMap(list) {
+    if (!this.listOpen) this.setList(true, true);
+    this.listOrder = null;
+    this.toggleBulk(list);
+  }
+  // 빈 곳을 끈 사람은 지도를 옮기려던 것일 수 있다
+  panHint() {
+    if (this.app.settings.dragPan || this.panHints >= 2) return;
+    this.panHints++;
+    this.toast('t_select', '범위 안에 고를 거점이 없습니다', '지도를 옮기려면 오른쪽 버튼으로 끄세요');
+  }
+  // 끄는 동안 범위 안에서 조건에 맞는 거점을 미리 보여 준다. 손을 떼면 toggleBulk로 더하거나 뺀다
   dragBulk(x0, y0, x1, y1) {
     const lx = Math.min(x0, x1), hx = Math.max(x0, x1), ly = Math.min(y0, y1), hy = Math.max(y0, y1);
-    const sites = this.bulkSites().filter((s) => s.x >= lx && s.x <= hx && s.y >= ly && s.y <= hy);
+    // 조건은 거점 목록을 펼쳐 둔 동안에만 따른다
+    const base = this.listOpen && !this.listPicked ? this.listMatch() : this.game.sites.filter((s) => s.available);
+    const sites = base.filter((s) => s.produces && s.x >= lx && s.x <= hx && s.y >= ly && s.y <= hy);
     const drop = sites.length > 0 && sites.every((s) => this.fleetPick.has(s));
     this.area = { x0, y0, x1, y1, roads: [], pick: new Set(), total: 0, pending: false, paths: new Map(), pathK: 0, sites: new Set(sites), drop };
     this.r.area = this.area;
-    patch(this.el.hint, [sites.length ? h('span', null, `거점 ${sites.length}곳 `, h('b', null, drop ? '빼기' : '더하기')) : h('span', null, '범위 안에 트럭을 둘 거점이 없습니다')]);
+    patch(this.el.hint, [sites.length ? h('span', null, `거점 ${sites.length}곳 `, h('b', null, drop ? '빼기' : '더하기')) : h('span', null, '범위 안에 조건에 맞는 거점이 없습니다')]);
     this.el.hint.classList.add('show');
   }
   buyBulk(routes, m, n) {
@@ -747,95 +840,142 @@ export class UI {
     this.renderInspector(true);
     this.renderTop();
   }
-  bulkView() {
-    const g = this.game, pick = this.fleetPick;
-    const running = [...pick].flatMap((s) => s.routesOut.filter((q) => q.valid && q.trucks.length));
+  // 고른 거점의 공용 메뉴: 거점 카드에서 하던 일을 고른 곳 전부에 한꺼번에 한다
+  listFoot(sites) {
+    const g = this.game, picked = [...this.fleetPick];
+    if (!g.modelUnlocked(this.modelSel)) this.modelSel = 0;
+    const m = this.modelSel;
+    const running = picked.flatMap((s) => s.routesOut.filter((q) => q.valid && q.trucks.length));
     const trucks = running.reduce((sum, q) => sum + q.trucks.length, 0);
-    const zone = (key, label, list) => {
-      const n = list.filter((s) => pick.has(s)).length;
-      return h('button', { key, class: `chip${n === list.length ? ' on' : n ? ' some' : ''}`, 'aria-pressed': n === list.length ? 'true' : 'false', 'data-tip': `거점 ${list.length}곳`, onclick: () => this.toggleBulk(list) }, label);
-    };
-    const regions = g.regions.filter((r) => r.unlocked).map((r) => [r, this.bulkSites(r.index)]).filter((q) => q[1].length);
-    const body = [h('div', { class: 'sec', key: 'zones' },
-      h('h3', null, '구역', pick.size > 0 && h('span', null, `${pick.size}곳`)),
-      h('div', { class: 'chips', key: 'zones' }, zone('all', '전국', this.bulkSites()), regions.map(([r, list]) => zone(`r${r.index}`, r.short, list)), pick.size > 0 && h('button', { key: 'clear', class: 'chip', onclick: () => this.toggleBulk([...pick]) }, '선택 해제')),
-      h('p', { class: 'status', key: 'help' }, pick.size ? `달리는 노선 ${running.length}개 · 트럭 ${trucks}대` : '지도를 끌어 범위를 고르거나 거점을 누르세요. 여러 번 고르면 더해지고, 고른 곳을 다시 고르면 빠집니다.'))];
-    if (pick.size) {
-      if (!g.modelUnlocked(this.modelSel)) this.modelSel = 0;
-      const m = this.modelSel;
-      const seg = this.modelSeg();
-      if (seg) body.push(h('div', { class: 'sec', key: 'model' }, h('h3', null, '차종'), seg));
-      // 원료가 없어 멈춘 공장에 트럭을 더해도 싣고 갈 것이 없다
-      const states = [...pick].map((s) => [s, this.siteStatus(s).short]);
-      const stopped = states.filter((q) => q[1] === '원료 없음').length;
-      const buySites = states.filter((q) => q[1] !== '원료 없음' && (!this.bulkNeed || q[1] === '트럭 없음' || q[1] === '트럭 부족')).map((q) => q[0]);
-      const buyRoutes = buySites.flatMap((s) => g.bulkRoutes(s));
-      const count = this.buyCount || 200;
-      const plan = g.planBuy(buyRoutes, m, count);
-      // 한 대도 못 사면 얼마가 드는지 보여 준다
-      const short = plan.n ? plan : g.planBuy(buyRoutes, m, this.buyCount || 1);
-      const note = !buyRoutes.length ? '' : !plan.n ? '자금 부족' : !this.buyCount ? `돈이 닿는 만큼 노선 ${buyRoutes.length}개에 고르게` : plan.n < plan.want ? `자금이 모자라 ${plan.want}대 중 ${plan.n}대만` : `노선 ${buyRoutes.length}개에 ${count}대씩`;
-      body.push(h('div', { class: 'sec', key: 'buy' },
-        h('h3', null, '트럭 사기', h('span', null, note)),
-        this.countSeg(),
-        h('div', { class: 'chips', key: 'need' }, h('button', { key: 'need', class: `chip${this.bulkNeed ? ' on' : ''}`, 'aria-pressed': this.bulkNeed ? 'true' : 'false', 'data-tip': '창고에 화물이 쌓이거나 아직 트럭이 없는 거점에만 삽니다', onclick: () => { this.bulkNeed = !this.bulkNeed; this.sound.click(); this.renderInspector(true); } }, '트럭 모자란 곳만')),
-        buyRoutes.length ? h('button', {
+    const outside = picked.filter((s) => !sites.includes(s)).length;
+    // 원료가 없어 멈춘 공장에 트럭을 더해도 싣고 갈 것이 없다
+    const stopped = picked.filter((s) => this.siteStatus(s).short === '원료 없음');
+    const buyRoutes = picked.filter((s) => !stopped.includes(s)).flatMap((s) => g.bulkRoutes(s, this.buyOn));
+    const count = this.buyCount || 200;
+    const plan = g.planBuy(buyRoutes, m, count);
+    // 한 대도 못 사면 얼마가 드는지 보여 준다
+    const short = plan.n ? plan : g.planBuy(buyRoutes, m, this.buyCount || 1);
+    const conv = g.planConvert(running, m);
+    const upg = g.planSites(picked, (s) => g.upgradeCost(s));
+    const bay = g.planSites(picked.filter((s) => s.bays < 12), (s) => g.bayCost(s));
+    const note = [
+      !buyRoutes.length ? '트럭을 더할 노선이 없습니다' : !plan.n ? '자금 부족' : !this.buyCount ? `돈이 닿는 만큼 노선 ${buyRoutes.length}개에 고르게` : plan.n < plan.want ? `자금이 모자라 ${plan.want}대 중 ${plan.n}대만` : `노선 ${buyRoutes.length}개에 ${count}대씩`,
+      stopped.length > 0 && `원료가 없어 멈춘 ${stopped.length}곳은 뺌`,
+    ].filter(Boolean).join(' · ');
+    const on = BUY_ON.find((q) => q[0] === this.buyOn);
+    const autoOn = running.length > 0 && running.every((q) => q.auto);
+    return h('div', { class: 'list-foot', key: 'foot' },
+      !this.listPicked && h('div', { class: 'foot-top', key: 'top', 'data-tip': `달리는 노선 ${running.length}개 · 트럭 ${trucks}대` },
+        h('b', null, `고른 거점 ${picked.length}곳`), outside > 0 && h('small', null, `${outside}곳은 조건 밖`),
+        h('div', { class: 'chips', key: 'acts' },
+          this.chipBtn('only', false, '고른 곳만', '고른 거점만 추려 봅니다', () => { this.sound.click(); this.listPicked = true; this.listOrder = null; this.renderInspector(true); }),
+          this.chipBtn('clear', false, '해제', '고른 거점을 모두 풉니다', () => this.toggleBulk(picked)))),
+      h('div', { class: 'seg-pair', key: 'segs' }, this.modelSeg(), this.countSeg()),
+      h('div', { class: 'list-line', key: 'on' }, h('span', { class: 'list-label' }, '노선'), h('div', { class: 'seg' }, BUY_ON.map(([id, label, tip]) => h('button', { key: id, class: this.buyOn === id ? 'on' : '', 'data-tip': tip, onclick: () => { this.buyOn = id; this.sound.click(); this.renderInspector(true); } }, label)))),
+      h('div', { class: 'foot-buy', key: 'buy' },
+        h('button', { class: 'btn sell', key: 'sell', disabled: !running.length, 'aria-label': '달리는 노선마다 트럭 한 대 처분', 'data-tip': '달리는 노선마다 트럭을 한 대씩 처분합니다 (구매가의 50% 환급).\n도로가 막힐 때 숨통을 틔웁니다.', onclick: () => this.sellBulk(running), ...this.showRoutes(running) }, ico('minus')),
+        h('button', {
           class: 'btn buy', key: 'go', disabled: !plan.n,
-          'data-tip': '달리는 노선마다 더합니다. 트럭이 없는 거점은 가장 잘 버는 노선을 엽니다.\n노선의 트럭이 늘수록 값이 오릅니다.',
+          'data-tip': `${on[2]}\n노선의 트럭이 늘수록 값이 오릅니다.`,
           onclick: () => this.buyBulk(buyRoutes, m, count),
           ...this.showRoutes(buyRoutes),
-        }, h('span', null, `${TRUCKS[m].short} ${plan.n || short.want}대 사기`), h('span', { class: 'price' }, fmtWon(plan.n ? plan.cost : short.full)))
-          : h('p', { class: 'status', key: 'none' }, this.bulkNeed ? '고른 거점 중 트럭이 모자란 곳이 없습니다.' : '트럭을 더할 노선이 없습니다.'),
-        stopped > 0 && h('p', { class: 'status', key: 'stop' }, `원료가 없어 멈춘 ${stopped}곳에는 사지 않습니다.`)));
-      const conv = g.planConvert(running, m);
-      if (running.length) {
-        body.push(h('div', { class: 'sec', key: 'conv' },
-          this.convertTitle('트럭 바꾸기', conv),
-          conv.all ? this.convertBtn(conv, running, m) : h('p', { class: 'status', key: 'none' }, `${TRUCKS[m].short}보다 적게 싣는 트럭이 없습니다.`)));
-      }
-    }
-    return [this.head(ico('t_fleet'), '트럭 일괄', null, () => { this.sound.click(); this.setTool('select'); }), h('div', { class: 'p-body', key: 'bulk' }, body)];
+        }, buyRoutes.length ? [h('span', { key: 'n' }, `${TRUCKS[m].short} ${plan.n || short.want}대 사기`), h('span', { class: 'price', key: 'p' }, fmtWon(plan.n ? plan.cost : short.full))] : '더할 노선 없음')),
+      h('p', { class: 'status', key: 'note' }, note),
+      conv.all > 0 ? this.convertBtn(conv, running, m) : running.length > 0 && h('p', { class: 'status', key: 'conv' }, `${TRUCKS[m].short}보다 적게 싣는 트럭이 없습니다`),
+      conv.n < conv.all && h('p', { class: 'status', key: 'short' }, conv.n ? `자금이 모자라 ${conv.all}대 중 ${conv.n}대만` : '자금 부족'),
+      h('div', { class: 'btn-row', key: 'grow' },
+        this.siteBtn('upg', '생산 +38%', upg, '고른 거점의 생산을 늘립니다. 늘어난 물량을 나를 트럭이 더 필요해집니다.', (s) => g.buyUpgrade(s), '생산을 늘렸습니다'),
+        bay.all > 0 && this.siteBtn('bay', '상하차 +1칸', bay, '고른 거점의 상하차장을 한 칸씩 늘립니다. 진입로 정체가 큰길까지 번지는 것을 막아 줍니다.', (s) => g.buyBay(s), '상하차장을 늘렸습니다')),
+      g.techs.has('autobuy') && running.length > 0 && h('div', { class: 'chips', key: 'auto' },
+        this.chipBtn('auto', autoOn, '자동 배차', '달리는 노선 전부에 자동 배차를 켜거나 끕니다', () => {
+          for (const q of running) { q.auto = !autoOn; q.model = m; }
+          this.sound.click();
+          this.renderInspector(true);
+        })));
+  }
+  // 생산이나 상하차장처럼 거점마다 한 번씩 사는 버튼
+  siteBtn(key, label, plan, tip, buy, done) {
+    const n = plan.list.length;
+    return h('button', {
+      class: 'btn up', key, disabled: !n,
+      'data-tip': `${tip}\n싼 곳부터 돈이 닿는 만큼 늘립니다. 지금은 ${plan.all}곳 중 ${n}곳`,
+      onclick: () => this.growSites(plan, buy, done),
+    }, h('span', null, label), h('span', { class: 'price' }, fmtWon(n ? plan.cost : plan.full)));
+  }
+  growSites(plan, buy, done) {
+    const g = this.game, m0 = g.money;
+    let n = 0;
+    for (const s of plan.list) if (buy(s)) n++;
+    if (!n) { this.sound.deny(); return; }
+    this.sound.buy();
+    this.toast('star', `${n}곳의 ${done}`, fmtWon(m0 - g.money));
+    this.renderInspector(true);
+    this.renderTop();
+  }
+  sellBulk(routes) {
+    const g = this.game, m0 = g.money;
+    let n = 0;
+    for (const q of routes) if (g.sellTruck(q)) n++;
+    if (!n) { this.sound.deny(); return; }
+    this.sound.click();
+    this.toast('truck_hauler', `트럭 ${n}대를 처분했습니다`, `+${fmtWon(g.money - m0)}`);
+    this.updateHighlights();
+    this.renderInspector(true);
+    this.renderTop();
+  }
+  // 권역이나 상태로 묶은 줄의 제목. 칸을 누르면 묶음을 통째로 고른다
+  groupHead(title, list) {
+    const can = list.filter((s) => s.produces);
+    return h('h3', null, h('span', { class: 'h-left' }, can.length > 0 && this.tickBtn(can, `${title} 모두 고르기`), title), h('span', null, `${list.length}곳`));
   }
 
   overviewView() {
-    const g = this.game, f = this.listView;
-    const filtering = f.q.trim() || f.kind !== 'all' || f.problem;
+    const g = this.game, f = this.listView, pick = this.fleetPick, picked = this.listPicked;
+    const sort = picked ? 'state' : f.sort;
+    const filtering = !picked && (f.q.trim() || f.kind !== 'all' || f.regions.length || f.states.length || f.empty);
     // 목록 위에 마우스가 있는 동안은 순서를 고정해 누르려던 줄이 도망가지 않게 한다
-    const key = JSON.stringify(f);
+    const key = JSON.stringify(f) + picked;
     const now = performance.now();
     if (!this.listOrder || key !== this.listKey || (now - this.listT > 4000 && !this.el.insp.matches(':hover'))) {
       this.listOrder = this.listSites();
       this.listStates = new Map(this.listOrder.map((s) => [s, this.siteStatus(s).short]));
-      this.listJams = filtering ? [] : g.jams.slice(0, 5);
+      this.listCounts = { empty: this.listMatch('empty').filter((s) => this.emptyRoutes(s).length).length };
+      for (const s of this.listMatch('states')) {
+        const st = this.siteStatus(s).short;
+        this.listCounts[st] = (this.listCounts[st] || 0) + 1;
+      }
+      this.listJams = filtering || picked ? [] : g.jams.slice(0, 5);
+      this.r.siteMatch = filtering ? new Set(this.listOrder) : null;
       this.listKey = key;
       this.listT = now;
     }
     const sites = this.listOrder;
-    const tools = this.listTools();
     const jams = this.listJams;
-    const body = [];
-    if (!filtering) {
-      const fleet = this.fleetSec();
-      if (fleet) body.push(fleet);
-    }
+    const body = [picked
+      ? h('div', { class: 'chips', key: 'modes' }, this.chipBtn('cond', false, '조건으로 더 고르기', '거점 목록을 펼쳐 권역, 상태, 빈 노선 같은 조건으로 더 고릅니다', () => { this.sound.click(); this.toggleList(); }), this.mapChip())
+      : this.listTools(sites, filtering)];
     if (jams.length) {
       body.push(h('div', { class: 'sec', key: 'jam' }, h('h3', null, '막히는 곳'), jams.map((j) => h('button', { class: 'list-row', key: `j${j.node.id}`, onclick: () => this.goNode(j.node) },
         j.site ? raw(siteIcon(j.site), 'ico') : ico('jam'), h('span', { class: 't' }, j.site ? `${j.site.name} 진입로` : j.node.name), h('span', { class: `state ${j.stuck > 30 ? 'bad' : 'warn'}` }, `${j.waiting}대`)))));
     }
     if (!sites.length) body.push(h('p', { class: 'status', key: 'none' }, '조건에 맞는 거점이 없습니다.'));
-    else if (f.sort === 'region') {
+    else if (sort === 'region') {
       const grouped = g.regions.filter((r) => r.unlocked).map((r) => ({ r, list: sites.filter((s) => s.region === r.index) })).filter((q) => q.list.length).reverse();
-      for (const { r, list } of grouped) body.push(h('div', { class: 'sec', key: `reg${r.index}` }, h('h3', null, r.short, h('span', null, `${list.length}곳`)), list.map((s) => this.listRow(s))));
-    } else if (f.sort === 'state') {
+      for (const { r, list } of grouped) body.push(h('div', { class: 'sec', key: `reg${r.index}` }, this.groupHead(r.short, list), list.map((s) => this.listRow(s))));
+    } else if (sort === 'state') {
       // 순서를 정할 때의 상태로 묶어, 순서를 고정한 동안 줄이 다른 묶음으로 옮겨 가지 않게 한다
       for (const name of LIST_STATES) {
         const list = sites.filter((s) => this.listStates.get(s) === name);
-        if (list.length) body.push(h('div', { class: 'sec', key: `st${name}` }, h('h3', null, name, h('span', null, `${list.length}곳`)), list.map((s) => this.listRow(s))));
+        if (list.length) body.push(h('div', { class: 'sec', key: `st${name}` }, this.groupHead(name, list), list.map((s) => this.listRow(s))));
       }
     } else {
-      body.push(h('div', { class: 'sec', key: 'sorted' }, h('h3', null, `${LIST_SORTS.find((q) => q[0] === f.sort)[1]} 순서`, h('span', null, `${sites.length}곳`)), sites.map((s) => this.listRow(s))));
+      body.push(h('div', { class: 'sec', key: 'sorted' }, h('h3', null, `${LIST_SORTS.find((q) => q[0] === sort)[1]} 순서`, h('span', null, `${sites.length}곳`)), sites.map((s) => this.listRow(s))));
     }
-    return [this.head(ico('list'), '거점 목록', null, () => this.setList(false)), tools, h('div', { class: 'p-body', key: 'body' }, body)];
+    const running = [...pick].flatMap((s) => s.routesOut.filter((q) => q.valid && q.trucks.length));
+    const head = picked
+      ? this.head(ico('t_fleet'), `거점 ${pick.size}곳 선택`, `달리는 노선 ${running.length}개 · 트럭 ${running.reduce((sum, q) => sum + q.trucks.length, 0)}대`, () => this.setList(false))
+      : this.head(ico('list'), '거점 목록', null, () => this.setList(false));
+    return [head, h('div', { class: 'p-body', key: 'body' }, body), pick.size > 0 && this.listFoot(sites)].filter(Boolean);
   }
 
   advice() {
@@ -888,10 +1028,12 @@ export class UI {
     const body = [];
     if (s.produces) body.push(...this.productionSec(s));
     if (s.isCity || s.kind === 'port') body.push(...this.consumerSec(s));
-    if (s.inputs && !s.isCity && s.inBuf.some((v) => v < g.inputCap(s) * 0.1)) body.push(...this.factoryIncoming(s));
+    const low = this.hold('low', !!s.inputs && !s.isCity && s.inBuf.some((v) => v < g.inputCap(s) * 0.1));
+    const jam = this.hold('jam', node.waiting >= 3);
+    if (low) body.push(...this.factoryIncoming(s));
     if (s.produces) body.push(...this.routesSec(s));
-    if (node.waiting >= 3) body.push(this.baySec(s));
-    body.push(this.siteMore(s));
+    if (jam) body.push(this.baySec(s, true));
+    body.push(this.siteMore(s, low, jam));
     return [head, h('div', { class: 'p-body', key: `body-${s.id}` }, body)];
   }
 
@@ -913,7 +1055,8 @@ export class UI {
     }
     chain.push(this.goodsPill(s.goods));
     kids.push(h('div', { class: 'chain', key: 'chain' }, chain));
-    if (st.tone !== 'ok') kids.push(h('p', { class: `status ${st.tone}`, key: 'st' }, st.text));
+    const said = this.hold('said', st.tone !== 'ok' ? st : null);
+    if (said) kids.push(h('p', { class: `status ${said.tone}`, key: 'st' }, said.text));
     kids.push(this.meter('창고', frac, gd.color, `창고 ${fmtTon(s.stock)} / ${fmtTon(cap)}`, 'stock', frac > 0.85));
     if (s.inputs) {
       const ic = g.inputCap(s);
@@ -1036,22 +1179,20 @@ export class UI {
     return [h('div', { class: 'sec', key: 'routes' }, kids)];
   }
 
-  baySec(s) {
+  baySec(s, jam) {
     const g = this.game;
     const cost = g.bayCost(s);
     const node = g.net.nodes[s.node];
-    const waiting = node.waiting;
     return h('div', { class: 'sec', key: 'bay' },
-      waiting >= 3 && h('p', { class: 'status bad', key: 'wait' }, `진입로에 트럭 ${waiting}대가 기다립니다.`),
+      jam && h('p', { class: 'status bad', key: 'wait' }, `진입로에 트럭 ${node.waiting}대가 기다립니다.`),
       s.bays < 12 && h('button', {
         class: 'btn up', key: 'buybay', disabled: g.money < cost, onclick: () => { if (g.buyBay(s)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); },
         'data-tip': `상하차장 ${s.bays} → ${s.bays + 1}칸\n진입로 정체가 큰길까지 번지는 것을 막아 줍니다.`,
       }, h('span', null, '상하차장 +1칸'), h('span', { class: 'price' }, fmtWon(cost))));
   }
 
-  siteMore(s) {
+  siteMore(s, low, jam) {
     const g = this.game;
-    const node = g.net.nodes[s.node];
     const kids = [this.moreBtn()];
     if (this.more) {
       const rows = [];
@@ -1072,8 +1213,8 @@ export class UI {
       rows.push(this.kv('상하차장', `${s.bays}칸`));
       if (s.lot && s.lot.cap) rows.push(this.kv('주차장', `${s.lot.used} / ${s.lot.cap}칸`));
       kids.push(h('div', { class: 'kvs', key: 'kvs' }, rows));
-      if (node.waiting < 3) kids.push(this.baySec(s));
-      if (s.inputs && !s.isCity && !s.inBuf.some((v) => v < g.inputCap(s) * 0.1)) kids.push(...this.factoryIncoming(s));
+      if (!jam) kids.push(this.baySec(s, false));
+      if (s.inputs && !s.isCity && !low) kids.push(...this.factoryIncoming(s));
       if (s.isCity || s.kind === 'port') {
         const lines = s.routesIn.filter((q) => q.trucks.length).sort((a, b) => b.rate - a.rate).slice(0, 6);
         if (lines.length) {
@@ -1092,7 +1233,7 @@ export class UI {
     const head = this.head(leading, n.name, `${g.regions[n.region]?.short || ''} · ${CONTROL_NAME[n.control]}`, () => this.select(null));
     const body = [];
     const stuck = n.stuckT > 25;
-    if (n.waiting >= 3) body.push(h('p', { class: `status ${stuck ? 'bad' : 'warn'}`, key: 'wait' }, stuck ? `트럭 ${n.waiting}대가 ${fmtTime(n.stuckT)}째 막혀 있습니다.` : `트럭 ${n.waiting}대가 기다립니다.`));
+    if (this.hold('wait', n.waiting >= 3)) body.push(h('p', { class: `status ${stuck ? 'bad' : 'warn'}`, key: 'wait' }, stuck ? `트럭 ${n.waiting}대가 ${fmtTime(n.stuckT)}째 막혀 있습니다.` : `트럭 ${n.waiting}대가 기다립니다.`));
     const opts = [
       ['auto', 'select', '기본', true],
       ['signal', 'signal', '신호등', g.techs.has('signal')],
@@ -1112,7 +1253,7 @@ export class UI {
     if (n.control === 'roundabout' && g.techs.has('ring2') && n.ringLanes < 2) {
       body.push(h('button', { class: 'btn up', key: 'ring2', onclick: () => { if (g.buyRing2(n)) { this.sound.place(); this.r.baseDirty = true; } } }, '2차로로 확장'));
     }
-    if ((stuck || n.waiting > 6) && g.techs.has('tow')) {
+    if (this.hold('tow', (stuck || n.waiting > 6) && g.techs.has('tow'))) {
       body.push(h('button', {
         class: 'btn', key: 'tow', disabled: g.money < g.towPrice(n),
         onclick: () => { const c = g.tow(n); if (c) { this.sound.horn(); this.toast('tow', `트럭 ${c}대를 견인했습니다`, '화물을 내려놓고 출발지로 돌아갑니다'); } },
@@ -1310,6 +1451,7 @@ export class UI {
           h('label', { class: 'field' }, '배경음 켜기', h('input', { id: 'set-music-on', type: 'checkbox', checked: snd.musicOn, onchange: (e) => this.setMusic(e.target.checked) })),
           h('div', { class: 'field' }, h('span', { class: 'now-playing' }, snd.track.title, h('small', null, snd.track.artist)), h('button', { class: 'btn', onclick: () => { snd.unlock(); snd.nextTrack(); this.renderModal(); } }, '다음 곡'))),
         h('div', { class: 'sec', key: 'map' }, h('h3', null, '지도'),
+          h('label', { class: 'field', 'data-tip': '켜면 왼쪽으로 끌어 지도를 옮기고, 오른쪽으로 끌어 거점을 고릅니다' }, '왼쪽으로 끌어 지도 옮기기', h('input', { id: 'set-drag', type: 'checkbox', checked: !!app.settings.dragPan, onchange: (e) => { app.settings.dragPan = e.target.checked; app.saveSettings(); } })),
           h('div', { class: 'btn-row' },
             h('button', { class: `btn${this.r.palName === 'day' ? ' go' : ''}`, onclick: () => { this.r.setPalette('day'); app.saveSettings(); app.drawMiniBase(); this.renderModal(); } }, '낮'),
             h('button', { class: `btn${this.r.palName === 'night' ? ' go' : ''}`, onclick: () => { this.r.setPalette('night'); app.saveSettings(); app.drawMiniBase(); this.renderModal(); } }, '밤'))),
@@ -1322,7 +1464,7 @@ export class UI {
             ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, '정말 처음부터'))
             : h('button', { class: 'btn danger', onclick: () => { this.confirmReset = true; this.renderModal(); } }, '처음부터 다시 시작')),
         h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
-          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 차로 도구로 끌기: 범위 넓히기 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · M: 배경음 · Esc 또는 우클릭: 취소')),
+          h('p', { class: 'credit' }, '왼쪽으로 끌기: 여러 거점 고르기 · 오른쪽으로 끌기 또는 Shift를 누르고 끌기: 지도 이동 · Shift나 Ctrl을 누르고 거점 누르기: 넣고 빼기 · 손가락: 끌면 이동, 길게 눌렀다 끌면 고르기 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 차로 도구로 끌기: 범위 넓히기 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · T: 눌러서 고르기 · M: 배경음 · Esc 또는 우클릭: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
           h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다. 화면 디자인은 Dinosaur Polo Club의 Mini Metro를 참고했습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth. 그림은 모두 코드로 그린 벡터입니다.', h('br'), `배경음: ${MUSIC_TRACKS.map((q) => `${q.artist}, ${q.title}`).join(' · ')} (모두 CC0, OpenGameArt). 효과음은 코드로 합성했습니다.`, h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
   }

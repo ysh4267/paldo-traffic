@@ -75,6 +75,7 @@ export const ICONS = {
   t_interchange: S(line('M6 31 34 9', 4) + line('M6 9 15.500 16.500M24.500 23.500 34 31', 4)),
   t_lane: S(line('M9 6V34M18 6V34', 3.8) + line('M30 14V26M24 20H36', 3.8)),
   t_remove: S(line('M10 10 30 30M30 10 10 30', 4.6)),
+  check: S(line('M7 21 16 30 33 10', 6)),
   t_fleet: S(line('M4 11V4H11M29 4H36V11M36 29V36H29M11 36H4V29', 3.2) + solid('M9 14h13v11H9ZM24 17.500h4l4 4V25h-8Z') + dot(14, 27, 2.800) + dot(27.500, 27, 2.800)),
   tow: S(line('M20 4V16', 3.8) + line('M20 16a6.500 6.500 0 1 1-6.500 6.500', 3.8) + line('M12 4H28', 3.8)),
 

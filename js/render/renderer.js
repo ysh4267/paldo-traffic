@@ -195,7 +195,8 @@ export class Renderer {
     this.hover = null;
     this.highlightRoutes = null;
     this.area = null;       // 끌어서 고른 범위
-    this.fleetPick = null;  // 트럭 일괄로 고른 거점
+    this.fleetPick = null;  // 거점 목록에서 고른 거점
+    this.siteMatch = null;  // 거점 목록의 조건에 맞는 거점. 조건이 없으면 null
     this.tool = 'select';
     this.toolColor = ACCENT;
     this.time = 0;
@@ -1501,10 +1502,13 @@ export class Renderer {
       const want = this.hover?.site === s ? 1 : this.selection?.site === s ? 0.7 : 0;
       s.hoverF = (s.hoverF || 0) + (want - (s.hoverF || 0)) * (1 - Math.exp(-this.lastDt * 16));
       const r = this.siteBadgeSize(s) * (1 + 0.16 * s.hoverF);
+      // 거점 목록의 조건에 맞지 않는 거점은 흐리게 그린다
+      if (this.siteMatch && !this.siteMatch.has(s)) ctx.globalAlpha = 0.28;
       this.drawStation(ctx, s, x, y, r);
       if (k < 0.24 || (s.isCity && (k < 0.6 || s.pop > 90)) || this.selection?.site === s || this.hover?.site === s || this.tutorTarget === s) {
         this.drawSiteLabel(ctx, s, x, y, r, labelBoxes);
       }
+      ctx.globalAlpha = 1;
     }
     if (this.tutorTarget) {
       const s = this.tutorTarget;
@@ -1542,13 +1546,14 @@ export class Renderer {
     const ringF = this.selection?.site === s || (inBox ? !this.area.drop : this.fleetPick?.has(s)) ? 1 : 0;
     s.ringF = (s.ringF || 0) + (ringF - (s.ringF || 0)) * (1 - Math.exp(-this.lastDt * 14));
     if (s.ringF > 0.02) {
+      const a = ctx.globalAlpha;
       ctx.strokeStyle = ACCENT;
       ctx.lineWidth = 2.6;
       ctx.globalAlpha = s.ringF;
       ctx.beginPath();
       ctx.arc(x, y, (r * 1.5 + 4) * (0.7 + 0.3 * s.ringF), 0, Math.PI * 2);
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = a;
     }
     shapePath(ctx, shape, x, y, r);
     ctx.fillStyle = pal.station;
