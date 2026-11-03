@@ -74,6 +74,7 @@ class App {
     }
     this.game.events.length = 0;
     this.drawMiniBase();
+    this.drawMini();
   }
 
   startFresh() {

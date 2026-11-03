@@ -864,7 +864,7 @@ export class UI {
     const foodRoutes = () => food.routesOut;
     this._steps = [
       { title: '첫 트럭을 사 보세요', text: '지도에서 깜빡이는 충주 사과밭을 누르세요.', target: () => apple, done: () => (this.sel && this.sel.site === apple) || apple.routesOut.some((q) => q.trucks.length) },
-      { title: '사과를 공장으로', text: '오른쪽 패널의 음성 식품공장 노선에서 노란 트럭 구매 버튼을 누르세요.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length > 0 },
+      { title: '사과를 공장으로', text: '패널의 음성 식품공장 노선에서 노란 트럭 구매 버튼을 누르세요.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length > 0 },
       { title: '운임이 들어옵니다', text: '트럭이 사과를 내려놓으면 돈이 들어옵니다. 돈이 모이면 트럭을 더 사세요. 창고 게이지가 빨개지면 트럭이 모자란다는 뜻입니다.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length >= 3 },
       { title: '이제 가공식품', text: '공장에 사과가 들어가면 가공식품이 쌓입니다. 음성 식품공장을 눌러 청주로 가는 트럭을 사세요. 값이 훨씬 비쌉니다.', target: () => food, done: () => foodRoutes().some((q) => q.trucks.length > 0) },
       { title: '납품하면 지역이 자랍니다', text: '위쪽 막대가 납품 실적입니다. 실적이 쌓이면 새 거점이 열리고, 다 채우면 다음 권역이 개통됩니다.', target: () => null, done: () => g.progress() >= 0.2 },

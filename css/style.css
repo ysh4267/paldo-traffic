@@ -303,14 +303,15 @@ svg { display: block; width: 100%; height: 100%; }
   .tool kbd { display: none; }
   .dock-sep { display: none; }
   #inspector { left: 4px; right: 4px; width: auto; top: auto; bottom: calc(max(4px, env(safe-area-inset-bottom, 0px)) + 58px); max-height: 46%; }
-  #inspector.collapsed { max-height: none; }
+  #inspector.collapsed { max-height: none; bottom: calc(max(4px, env(safe-area-inset-bottom, 0px)) + 58px); }
   .p-head { padding: 7px 10px; }
   .p-title h2 { font-size: 18px; }
   .p-head .badge { width: 32px; height: 32px; }
   #vms, #mini { display: none; }
   #dock { top: auto; }
-  #toasts { left: 6px; top: calc(max(4px, env(safe-area-inset-top, 0px)) + 118px); width: calc(100vw - 12px); max-width: 300px; }
-  #coach { left: 6px; right: 6px; width: auto; bottom: calc(max(4px, env(safe-area-inset-bottom, 0px)) + 62px); }
+  #toasts { left: 6px; right: 6px; top: auto; bottom: calc(max(4px, env(safe-area-inset-bottom, 0px)) + 122px); width: auto; max-width: none; }
+  #inspector:not(.collapsed) ~ #toasts { display: none; }
+  #coach { left: 6px; right: 6px; width: auto; top: calc(max(4px, env(safe-area-inset-top, 0px)) + 122px); bottom: auto; }
   #toolhint { bottom: 64px; white-space: normal; text-align: center; width: max-content; }
   .banner-sign { min-width: 0; width: calc(100vw - 40px); padding: 14px 16px; }
   .banner-sign b { font-size: 32px; }

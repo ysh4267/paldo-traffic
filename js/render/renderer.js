@@ -713,10 +713,10 @@ export class Renderer {
       for (let i = 0; i < arr.length; i += 5) {
         const x = arr[i], y = arr[i + 1], tx = arr[i + 2], ty = arr[i + 3], len = arr[i + 4];
         if (far) {
-          const d = 2.6 * k;
+          const d = 2.8 * k;
           ctx.rect(x - d / 2, y - d / 2, d, d);
         } else {
-          const l = Math.max(len, 3.2 * k), w = Math.max(0.22, 2.1 * k) / 2;
+          const l = Math.max(len * 1.15, 6.5 * k), w = Math.max(0.22, 3 * k) / 2;
           const nx = -ty * w, ny = tx * w;
           ctx.moveTo(x + nx, y + ny);
           ctx.lineTo(x - nx, y - ny);
@@ -1215,7 +1215,8 @@ export class Renderer {
       for (const n of net.nodes) {
         if (n.terminal || n.inE.length < 2 || !this.nodeOpen(n)) continue;
         const d = Math.hypot(cam.sx(n.x) - sx, cam.sy(n.y) - sy);
-        const r = Math.max(n.R / cam.k, 13);
+        const signTool = tool === 'yield' || tool === 'stop';
+        const r = signTool ? Math.max((n.R * 2.2) / cam.k, 26) : Math.max(n.R / cam.k, 13);
         if (d < r && d < bd) { bd = d; best = n; }
       }
       if (best) {
@@ -1283,7 +1284,7 @@ function makeCitySprite(s) {
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const st = s.cityStage;
   const popF = Math.min(1.5, 0.75 + Math.sqrt(s.pop) / 16);
-  const count = Math.round((14 + st * 12) * popF);
+  const count = Math.round((24 + st * 11) * popF);
   const list = [];
   for (let i = 0; i < count; i++) {
     const a = rnd() * Math.PI * 2;
@@ -1506,7 +1507,7 @@ function makeSiteDecor(s) {
 }
 
 function drawHouse(g, x, y, rnd) {
-  const w = 9 + rnd() * 4, h = 6 + rnd() * 2;
+  const w = 13 + rnd() * 5, h = 8 + rnd() * 3;
   const roofs = ['#c8553d', '#b5482f', '#3f6fb5', '#2f7a68'];
   const roof = roofs[Math.floor(rnd() * roofs.length)];
   g.fillStyle = '#f2e9d8';
@@ -1516,7 +1517,7 @@ function drawHouse(g, x, y, rnd) {
   g.fillStyle = roof;
   g.beginPath();
   g.moveTo(x - w / 2 - 1.5, y - h);
-  g.lineTo(x, y - h - 5.5);
+  g.lineTo(x, y - h - 7);
   g.lineTo(x + w / 2 + 1.5, y - h);
   g.closePath();
   g.fill();
