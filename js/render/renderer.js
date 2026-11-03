@@ -374,6 +374,16 @@ export class Renderer {
       b.closePath();
       b.fill();
       b.beginPath();
+      b.moveTo(lot.sx - lot.ly * 0.8, lot.sy + lot.lx * 0.8);
+      b.lineTo(lot.sx + lot.ly * 0.8, lot.sy - lot.lx * 0.8);
+      b.lineTo(lot.x + lot.ly * 0.8, lot.y - lot.lx * 0.8);
+      b.lineTo(lot.x - lot.ly * 0.8, lot.y + lot.lx * 0.8);
+      b.closePath();
+      b.fill();
+      b.beginPath();
+      b.arc(lot.sx, lot.sy, 0.95, 0, Math.PI * 2);
+      b.fill();
+      b.beginPath();
       b.arc(lot.x, lot.y, 0.95, 0, Math.PI * 2);
       b.fill();
       if (k < 0.2) {
@@ -1093,8 +1103,8 @@ export class Renderer {
       ctx.fillRect(rearX - s * 0.25, W / 2 - s * 1.2, s * 0.5, s);
     };
     const shadowOff = Math.min(0.035, 1.4 * k);
-    const backing = v.lot && v.lot.phase === 'back';
-    const braking = v.lot ? v.lot.phase === 'in' && v.a < -0.6 : v.a < -0.6 || v.v < 0.05;
+    const backing = v.lot && v.lot.phase === 'back' && v.lot.go;
+    const braking = v.lot ? v.lot.active && !backing && (v.a < -0.6 || v.v < 0.05) : v.a < -0.6 || v.v < 0.05;
     if (g.wb2) {
       // 트랙터 + 트레일러: 연결부에서 꺾인다
       let vx = v.a1x - v.a2x, vy = v.a1y - v.a2y;

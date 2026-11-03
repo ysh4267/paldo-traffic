@@ -1,6 +1,6 @@
 // 게임 상태와 규칙. DOM이 없어 Node에서도 돌아간다 (밸런스 봇이 같은 코드를 쓴다).
 import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES } from '../sim/network.js';
-import { Traffic } from '../sim/traffic.js';
+import { Traffic, GAP } from '../sim/traffic.js';
 import {
   GOODS, TIER_WEIGHT, BASE_RATE, EXPAND_COST, BAY_COST, START_MONEY, TRUCK_STEP, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE,
   LANE_PRICE_PER_KM, LANE_PRICE_MIN, LAND_FACTOR, PROJECT_COST, FERRY_PRICE, TOW_PRICE, CITY_ACCEPTS, PORT_ACCEPTS, AIR_ACCEPTS, DOKDO_ACCEPTS, fmtWon,
@@ -11,9 +11,15 @@ export const SAVE_VERSION = 2;
 const ECON_DT = 0.05;
 const CITY_STAGE_NEED = [0, 25, 110, 480, 2000, 9000];
 const LOT_V = 3;         // 주차장 안에서 달리는 속도 km/s
-const LOT_V_BACK = 1.6;  // 후진 속도
-const LOT_LEAVE_V = 1.5; // 진입로로 나갈 때의 속도
-const LOT_SHIFT = 0.25;  // 후진과 전진을 바꾸며 잠깐 서는 시간 s
+const LOT_V_BACK = 2;    // 후진 속도
+const LOT_LEAVE_V = 2.2; // 진입로로 나갈 때의 속도
+const LOT_SHIFT = 0.2;   // 후진과 전진을 바꾸며 잠깐 서는 시간 s
+const LOT_BUSY = 3;      // 나갈 차례를 기다리는 트럭이 이만큼이면 새 트럭은 칸 없이 기다린다
+const LOT_RECHECK = 0.12; // 칸에서 나갈 길을 다시 살피는 간격 s
+const LOT_LOOK = 1.6;    // 설 수 있는 거리보다 더 내다보는 거리 km
+const LOT_HEADWAY = 0.08; // 앞차와 두는 시간 간격 s
+const LOT_PATIENCE = 8;  // 통로를 가로지르려고 이만큼 기다렸으면 비집고 들어간다 s
+const LOT_SQUEEZE = 2;   // 서로 막고 있던 트럭이 비켜 지나가는 동안 앞을 보지 않는 시간 s
 
 export class Site {
   constructor(def, index, net) {
@@ -96,7 +102,7 @@ export class Game {
   constructor(data, opts = {}) {
     this.data = data;
     this.net = new Network(data);
-    this.traffic = new Traffic(this.net, { arrive: (v) => this.onArrive(v) });
+    this.traffic = new Traffic(this.net, { arrive: (v) => this.onArrive(v), arriveSpeed: (v) => this.arriveSpeed(v) });
     this.regions = data.regions.map((r, i) => ({ ...r, index: i, unlocked: false, pts: 0 }));
     this.sites = data.sites.map((d, i) => new Site(d, i, this.net));
     this.siteById = new Map(this.sites.map((s) => [s.id, s]));
@@ -115,6 +121,8 @@ export class Game {
     this.lotVer = 0;           // 주차장이 새로 생기거나 넓어지면 오른다
     this.lotVehicles = new Set();
     this.lotMovers = [];
+    this.lotGhosts = 0;        // 통로를 못 비켜 비집고 들어간 횟수
+    this.lotExitV = 0;
     this.techs = new Set();
     this.upg = {};
     for (const u of UPGRADES) this.upg[u.id] = 0;
@@ -326,6 +334,15 @@ export class Game {
       }
       // 출발
       while (s.exitQ.length) {
+        // 출구 앞에 서 있는 트럭부터 내보낸다. 앞이 빈 줄 보이는데 서 있으면 어색하다. 칸 없이 기다리던 트럭은 그 틈에 나간다
+        if (!s.exitQ[0].lot) {
+          const i = s.exitQ.findIndex((q) => q.lot);
+          if (i > 0) {
+            const q = s.exitQ[i];
+            s.exitQ[i] = s.exitQ[0];
+            s.exitQ[0] = q;
+          }
+        }
         const v = s.exitQ[0];
         if (v.retire) { s.exitQ.shift(); this.removeTruck(v); continue; }
         const first = v.path[0];
@@ -408,13 +425,24 @@ export class Game {
     return p;
   }
 
+  // 거점에 닿는 트럭이 서지 않고 들어갈 수 있는 속도. 0이면 차로 끝에 선다
+  arriveSpeed(v) {
+    const r = v.route;
+    if (v.retire) return 0;
+    const s = v.leg === 1 ? r.to : r.from;
+    if (v.leg === 1 && s.inbound >= s.bays * 3) return 0;
+    const lot = this.lotOf(s);
+    if (!lot.canTake() || lot.waiting >= LOT_BUSY) return 0;
+    return lot.entrySpeed(v, LOT_V);
+  }
+
   // 트럭이 경로 끝(거점)에 도착
   onArrive(v) {
     const r = v.route;
     if (v.retire) { this.removeTruckFromSim(v); return true; }
     if (v.leg === 1) {
       const s = r.to;
-      if (s.inbound >= s.bays * 3) return false;
+      if (s.inbound >= s.bays * 3 && v.v < 1) return false;
       s.inbound++;
       this.enterLot(s, v);
       return true;
@@ -435,15 +463,19 @@ export class Game {
     if (lot.cap !== cap) this.lotVer++;
     return stall;
   }
+  newLotState(site, stall, phase, seg, s) {
+    return { site, stall, phase, seg, s, hold: 0, wait: 0, go: false, ghost: 0, active: false, rest: null, restI: 0, restS0: 0, restN: 0, ax: 0, ay: 0, bx: 0, by: 0 };
+  }
   // 차로 끝에 닿은 트럭이 칸을 찾아 들어간다. 칸이 없으면 보이지 않는 곳에서 기다린다
   enterLot(s, v) {
-    const stall = this.takeStall(s, v);
+    const stall = s.lot && s.lot.waiting >= LOT_BUSY ? -1 : this.takeStall(s, v);
     if (stall < 0) { v.v = 0; v.a = 0; this.lotParked(s, v); return; }
     const lane = v.lane;
     const seg = s.lot.pathIn(stall, lane ? lane.index : 0);
     if (lane) v.passed(lane);
     v.state = 'lot';
-    v.lot = { site: s, stall, phase: 'in', seg, s: lane ? v.s - lane.edge.L : 0, hold: 0 };
+    v.lot = this.newLotState(s, stall, 'in', seg, lane ? v.s - lane.edge.L : 0);
+    s.lot.enter(v);
     this.lotVehicles.add(v);
     this.lotMovers.push(v);
   }
@@ -452,7 +484,7 @@ export class Game {
     const stall = this.takeStall(s, v);
     if (stall >= 0) {
       const seg = s.lot.pathIn(stall, 0);
-      v.lot = { site: s, stall, phase: 'park', seg, s: seg.len, hold: 0 };
+      v.lot = this.newLotState(s, stall, 'park', seg, seg.len);
       this.lotVehicles.add(v);
     }
     v.state = 'queue';
@@ -484,13 +516,18 @@ export class Game {
     L.s = v.len;
     v.v = 0;
     v.a = 0;
+    L.wait = 0;
+    L.ghost = 0;
     L.hold = LOT_SHIFT;
+    s.lot.waiting++;
     this.lotMovers.push(v);
   }
   dropLot(v) {
     const L = v.lot;
     if (!L) return;
+    if (L.phase === 'back' && !L.go) L.site.lot.waiting--;
     if (L.stall >= 0) L.site.lot.release(L.stall);
+    L.site.lot.leave(v);
     v.lot = null;
     this.lotVehicles.delete(v);
   }
@@ -502,12 +539,59 @@ export class Game {
       const L = v.lot;
       if (!L || L.phase === 'park' || L.phase === 'exit') continue;
       if (L.hold > 0) { L.hold -= dt; list[keep++] = v; continue; }
+      const lot = L.site.lot;
+      // 후진은 갈 길이 빌 때까지 칸에서 기다린다
+      if (L.phase === 'back' && !L.go && !lot.tryBack(v)) {
+        L.hold = LOT_RECHECK;
+        list[keep++] = v;
+        continue;
+      }
       const remain = L.seg.len - L.s;
-      const vEnd = L.phase === 'out' ? LOT_LEAVE_V : 0;
-      const u = this.traffic.drive(v, L.phase === 'back' ? LOT_V_BACK : LOT_V, remain, vEnd, 0, dt);
+      const look = (v.v * v.v) / (2 * v.brake) + LOT_LOOK;
+      let gap = remain, leadV = 0, head = 0, slowV, slowD;
+      if (L.phase === 'out') gap = this.lotExitGap(v, remain, look);
+      if (L.phase === 'out' && gap === Infinity) { slowV = LOT_LEAVE_V; slowD = remain; }
+      if (L.phase === 'out' && gap < Infinity) leadV = this.lotExitV;
+      let scanTo = Math.min(look, remain);
+      if (L.phase === 'in') {
+        // 칸 쪽으로 꺾기 전에 그 길이 비었는지 보고, 꺾을 곳까지는 앞차를 보며 간다
+        const toTurn = L.seg.commitS - L.s;
+        scanTo = Math.min(look, Math.max(0, toTurn));
+        if (!L.go && toTurn <= look) {
+          if (L.wait > LOT_PATIENCE) { lot.tryTurn(v, true); this.lotGhosts++; }
+          else if (!lot.tryTurn(v, false)) {
+            gap = Math.max(0, toTurn);
+            if (v.v < 0.1) L.wait += dt;
+          }
+        }
+      }
+      let blocker = null;
+      if (L.ghost > 0) L.ghost -= dt;
+      else if (L.phase !== 'back' && scanTo > 0) {
+        const g = lot.scan(v, scanTo);
+        if (g < gap) {
+          gap = g;
+          leadV = lot.leadV;
+          head = LOT_HEADWAY;
+          slowD = undefined;
+          blocker = lot.lead;
+        }
+      }
+      const u = this.traffic.drive(v, L.phase === 'back' ? LOT_V_BACK : LOT_V, gap, leadV, head, dt, slowV, slowD);
+      // 다른 방향으로 가는 트럭과 서로 막고 있으면 언젠가는 비켜 지나간다. 같은 줄의 앞차는 끝까지 기다린다
+      if (blocker && u < 0.05 && blocker.lot.phase !== L.phase && !(L.phase === 'out' && blocker.lot.phase === 'exit')) {
+        L.wait += dt;
+        if (L.wait > LOT_PATIENCE) {
+          L.wait = 0;
+          L.ghost = LOT_SQUEEZE;
+          this.lotGhosts++;
+        }
+      }
       const ds = u * dt;
       L.s += ds;
       v.odo += ds;
+      lot.passRest(v);
+      lot.updateBody(v);
       if (remain - ds > 0.02 && (u > 0.02 || remain > 0.08)) { list[keep++] = v; continue; }
       // 구간 끝
       L.s = L.seg.len;
@@ -516,25 +600,50 @@ export class Game {
         L.phase = 'park';
         v.v = 0;
         v.a = 0;
+        lot.leave(v);
         this.lotParked(s, v);
       } else if (L.phase === 'back') {
         const stall = L.stall;
-        s.lot.release(stall);
+        lot.release(stall);
         L.stall = -1;
         L.phase = 'out';
-        L.seg = s.lot.pathOut(stall);
+        L.seg = lot.pathOut(stall);
         L.s = EXIT_PREFIX + v.len;
+        L.go = false;
+        L.rest = null;
+        L.wait = 0;
+        L.ghost = 0;
+        lot.updateBody(v);
         v.v = 0;
         v.a = 0;
         L.hold = LOT_SHIFT;
         list[keep++] = v;
       } else {
         L.phase = 'exit';
+        lot.updateBody(v);
         v.state = 'queue';
         s.exitQ.push(v);
       }
     }
     list.length = keep;
+  }
+  // 나가는 길 끝의 사정. 진입로에 자리가 있으면 Infinity, 없으면 멈춰야 할 곳까지의 거리
+  lotExitGap(v, remain, look) {
+    this.lotExitV = 0;
+    const first = v.path && v.path[0];
+    if (!first || remain > look + 1) return Infinity;
+    let gap = Infinity;
+    // 막 나간 트럭의 꽁무니가 아직 주차장 쪽에 남아 있으면 그 뒤에 선다
+    for (const q of first.lanes) {
+      const t = q.tail();
+      if (!t) continue;
+      const g = remain + t.s - t.len - GAP;
+      if (g < gap && g < remain) { gap = g; this.lotExitV = t.v; }
+    }
+    if (!this.traffic.bestLane(first, v.path[1] || null, v.len + GAP)) {
+      if (remain - 0.02 < gap) { gap = Math.max(0, remain - 0.02); this.lotExitV = 0; }
+    }
+    return gap;
   }
 
   payDelivery(s, v) {

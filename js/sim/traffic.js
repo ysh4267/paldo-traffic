@@ -230,7 +230,13 @@ export class Traffic {
     const reqD = (f.v * f.v + SOFT_V * SOFT_V) / (2 * brk) + f.v * TAU + GRANT_MARGIN;
     if (dStop > reqD) return;
     if (f.pi >= f.path.length - 1) {
-      if (dStop < 0.25 && this.hooks.arrive(f)) this.removeFromLane(f, true);
+      if (dStop < 0.25 && this.hooks.arrive(f)) {
+        if (f.state === 'lot') {
+          lane.lastExit = f;
+          lane.lastExitOdo = f.odo + dStop;
+        }
+        this.removeFromLane(f, true);
+      }
       return;
     }
     const next = f.path[f.pi + 1];
@@ -628,15 +634,24 @@ export class Traffic {
           slowV = c.connV;
           slowD = dStop;
         } else {
-          gap = dStop - STOP_MARGIN;
-          leadV = 0;
-          head = 0;
+          // 거점으로 들어가는 트럭은 자리가 있으면 서지 않고 굴러 들어간다
+          const vIn = c.pi >= c.path.length - 1 && this.hooks.arriveSpeed ? this.hooks.arriveSpeed(c) : 0;
+          if (vIn > 0) {
+            gap = Infinity;
+            leadV = 0;
+            slowV = vIn;
+            slowD = dStop;
+          } else {
+            gap = dStop - STOP_MARGIN;
+            leadV = 0;
+            head = 0;
+          }
         }
         const le = lane.lastExit;
         if (le) {
           const moved = le.odo - lane.lastExitOdo;
-          if (moved > le.len + GAP || le.state !== 'road') lane.lastExit = null;
-          else if (c.granted) {
+          if (moved > le.len + GAP || (le.state !== 'road' && le.state !== 'lot')) lane.lastExit = null;
+          else if (c.granted || le.state === 'lot') {
             const g2 = dStop + moved - le.len - GAP;
             if (g2 < gap) { gap = g2; leadV = le.v; }
           }
@@ -649,7 +664,7 @@ export class Traffic {
     }
     if (!vs.length && lane.lastExit) {
       const le = lane.lastExit;
-      if (le.odo - lane.lastExitOdo > le.len + GAP || le.state !== 'road') lane.lastExit = null;
+      if (le.odo - lane.lastExitOdo > le.len + GAP || (le.state !== 'road' && le.state !== 'lot')) lane.lastExit = null;
     }
 
     // 교차로 진입

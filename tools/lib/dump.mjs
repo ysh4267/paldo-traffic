@@ -16,6 +16,14 @@ export function dumpJams(g, limit = 4) {
       }
     }
   }
+  console.log('\n--- 주차장');
+  const lots = g.sites.filter((s) => s.lot && (s.lot.active.some((v) => v.v < 0.1) || s.exitQ.length > 1)).sort((a, b) => (b.lot.active.length + b.exitQ.length) - (a.lot.active.length + a.exitQ.length));
+  for (const s of lots.slice(0, limit + 2)) {
+    const lanes = s.spurOut.lanes.map((l) => `${l.free().toFixed(2)}(n${l.veh.length})`).join(' ');
+    const inn = s.spurIn.lanes.map((l) => `n${l.veh.length}${l.lastExit ? ` le=v${l.lastExit.id}[${l.lastExit.state} moved=${(l.lastExit.odo - l.lastExitOdo).toFixed(2)}]` : ''}`).join(' ');
+    console.log(`\n== ${s.name} 칸 ${s.lot.used}/${s.lot.cap} 대기 ${s.lot.waiting} 내리기 ${s.unloadBays.length}/${s.bays} 들어오는 중 ${s.inbound} 하차줄 ${s.unloadQ.length} 대기장 ${s.yard.length} 출구줄 ${s.exitQ.length} 나가는 진입로 [${lanes}] 들어오는 진입로 [${inn}]`);
+    for (const v of s.lot.active) console.log(`   v${v.id} ${v.model.short} ${v.lot.phase}${v.lot.go ? '!' : ''}${v.lot.ghost > 0 ? ' 비켜 지나감' : ''} 칸${v.lot.stall} s=${v.lot.s.toFixed(2)}/${v.lot.seg.len.toFixed(2)} 꺾기=${v.lot.seg.commitS ? v.lot.seg.commitS.toFixed(2) : '-'} v=${v.v.toFixed(2)} 대기=${v.lot.wait.toFixed(1)} 멈춤=${v.lot.hold.toFixed(2)}`);
+  }
   console.log('\n--- 의존 사슬');
   const seenLanes = new Set();
   let printed = 0;

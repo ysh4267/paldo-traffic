@@ -1,4 +1,4 @@
-// 주차장 점검: 사고팔고 구난하고 저장을 되살려도 칸 수가 어긋나지 않고 트럭이 멈춰 서지 않는지 본다.
+// 주차장 점검: 사고팔고 구난하고 저장을 되살려도 칸 수가 어긋나지 않고 트럭이 멈춰 서지 않으며, 안에서 움직이는 트럭끼리 겹치지 않는지 본다.
 // 사용법: node tools/lot-test.mjs [분]
 import fs from 'node:fs';
 import { Game } from '../js/game/game.js';
@@ -20,8 +20,19 @@ for (const r of routes()) {
   for (let i = 0; i < n; i++) g.buyTruck(r, Math.floor(rnd() * 4));
 }
 
+// 지난 점검 때 주차장 통로에 있던 트럭의 위치
+let lastPos = new Map();
+
 function check(when) {
   const errs = [];
+  const pos = new Map();
+  for (const v of g.lotVehicles) {
+    const L = v.lot;
+    if (L.phase !== 'in') continue;
+    pos.set(v, L.s);
+    if (lastPos.has(v) && Math.abs(lastPos.get(v) - L.s) < 0.01) errs.push(`${L.site.name} 통로에서 움직이지 않는 트럭`);
+  }
+  lastPos = pos;
   for (const s of g.sites) {
     if (s.inbound < 0) errs.push(`${s.name} inbound ${s.inbound}`);
     if (!s.lot) continue;
@@ -32,6 +43,12 @@ function check(when) {
       else if (!v.lot || v.lot.site !== s) errs.push(`${s.name} 칸과 트럭이 어긋남 (${v.state})`);
     }
     s.lot.stalls.forEach((v, i) => { if (v && s.lot.blocked[i]) errs.push(`${s.name} 도로 위 칸 사용`); });
+    for (const v of s.lot.active) {
+      if (!v.lot || v.lot.site !== s || !v.lot.active) errs.push(`${s.name} 움직이는 트럭 목록이 어긋남`);
+    }
+    let waiting = 0;
+    for (const v of g.lotVehicles) if (v.lot.site === s && v.lot.phase === 'back' && !v.lot.go) waiting++;
+    if (waiting !== s.lot.waiting) errs.push(`${s.name} 후진 대기 수 ${s.lot.waiting} != ${waiting}`);
   }
   for (const v of g.lotVehicles) {
     if (!v.lot) errs.push('주차장 목록에 칸 없는 트럭');
@@ -50,10 +67,37 @@ function check(when) {
   return errs.length;
 }
 
+// 움직이는 트럭 몸통끼리 이 거리보다 가까우면 겹친 것으로 센다
+const OVERLAP = 0.15;
+let overlapSamples = 0, overlaps = 0;
+function bodyGap(a, b) {
+  let best = Infinity;
+  for (let i = 0; i <= 4; i++) {
+    const x = a.ax + ((a.bx - a.ax) * i) / 4, y = a.ay + ((a.by - a.ay) * i) / 4;
+    for (let j = 0; j <= 4; j++) {
+      const u = b.ax + ((b.bx - b.ax) * j) / 4, w = b.ay + ((b.by - b.ay) * j) / 4;
+      best = Math.min(best, Math.hypot(x - u, y - w));
+    }
+  }
+  return best;
+}
+function countOverlaps() {
+  for (const s of g.sites) {
+    const list = s.lot ? s.lot.active : [];
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        overlapSamples++;
+        if (bodyGap(list[i].lot, list[j].lot) < OVERLAP) overlaps++;
+      }
+    }
+  }
+}
+
 let errors = 0;
 let lastDeliv = 0;
 for (let t = 0, tick = 0; t < MINUTES * 60; t += DT, tick++) {
   g.tick(DT);
+  if (tick % 6 === 0) countOverlaps();
   if (tick % 90 === 0) {
     const list = routes();
     const r = list[Math.floor(rnd() * list.length)];
@@ -79,5 +123,8 @@ for (let t = 0, tick = 0; t < MINUTES * 60; t += DT, tick++) {
   }
 }
 errors += check('끝');
+const share = overlaps / Math.max(1, overlapSamples);
+console.log(`겹침 ${overlaps}건 / ${overlapSamples}짝 (${(share * 100).toFixed(2)}%), 비집고 지나간 횟수 ${g.lotGhosts}`);
+if (share > 0.01) { console.log('주차장 안에서 트럭이 너무 자주 겹칩니다'); errors++; }
 console.log(errors ? `오류 ${errors}건` : '모두 통과');
 process.exit(errors ? 1 : 0);

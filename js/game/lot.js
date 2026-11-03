@@ -2,6 +2,8 @@
 // 트럭은 칸으로 들어가 멈추고, 일이 끝나면 후진으로 빠져나와 앞으로 달려 나간다.
 // 좌표는 통로 방향 u, 오른쪽 w로 잡는다. 칸 수는 쓸 만큼 늘어난다.
 // 통로 방향은 도로와 다른 거점, 바다를 가장 적게 덮는 쪽으로 고른다.
+// 안에서는 앞차 몸통을 보고 따라가고, 후진이나 통로를 가로지르는 트럭은 갈 길이 빈 뒤에야 들어선다.
+// 먼저 들어선 트럭이 갈 길은 다른 트럭이 비켜 준다.
 import { Polyline, bezier, laneOffset } from '../sim/network.js';
 
 export const STALL_W = 0.62;   // 칸 너비 km
@@ -15,6 +17,32 @@ const CAP_MAX = 24;
 const NECK = 0.8;              // 진입로 끝에서 통로로 돌아 들어가는 곳까지
 const TAIL = 1.1;              // 마지막 칸 뒤로 남겨 두는 후진 여유
 const ANGLES = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5].map((q) => (q * Math.PI) / 8);
+const CLEAR = 0.42;            // 앞머리와 다른 트럭 몸통 사이에 두는 거리
+const CLEAR_PASS = 0.26;       // 맞은편 차로로 스쳐 지날 때의 거리
+const LOOK_STEP = 0.3;         // 앞길을 살피는 간격
+const P = [0, 0, 0, 0];
+
+// 통로가 꺾인 만큼 진입로 앞쪽에서 통로를 시작한다. 드나드는 곡선이 서로 엇갈리지 않고 넉넉하게 돈다
+const neckShift = (a) => (Math.abs(a) > Math.PI / 2 ? 1.3 : Math.abs(Math.sin(a)));
+
+// 경로 위 s의 위치를 P에 남긴다. 경로 시작 전은 처음 방향으로 늘여 잡는다
+function pointAt(seg, s) {
+  seg.sample(Math.max(0, s), P);
+  if (s < 0) {
+    P[0] += P[2] * s;
+    P[1] += P[3] * s;
+  }
+}
+
+// 점과 선분 사이 거리가 c보다 가까운가
+function near(x, y, ax, ay, bx, by, c) {
+  const dx = bx - ax, dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const ex = ax + dx * t - x, ey = ay + dy * t - y;
+  return ex * ex + ey * ey < c * c;
+}
 
 function inRings(rings, x, y) {
   let inside = false;
@@ -102,42 +130,58 @@ export class Lot {
   constructor(site, game) {
     const e = site.spurIn;
     const p = e.sample(e.L, 0, [0, 0, 0, 0]);
-    this.x = p[0];
-    this.y = p[1];
+    this.sx = p[0];    // 진입로 끝
+    this.sy = p[1];
     this.lx = p[2];    // 진입로 끝의 방향
     this.ly = p[3];
     const obs = obstacles(game, site, p[0], p[1]);
     let best = Infinity, pick = null;
     for (const a of ANGLES) {
       const c = Math.cos(a), s = Math.sin(a);
+      const shift = neckShift(a);
+      this.x = p[0] + p[2] * shift;   // 통로가 시작되는 곳
+      this.y = p[1] + p[3] * shift;
       this.tx = p[2] * c - p[3] * s;
       this.ty = p[2] * s + p[3] * c;
       this.nx = -this.ty;
       this.ny = this.tx;
-      const fit = this.fit(obs);
+      const fit = this.fit(obs, shift);
       // 칸이 아예 없는 쪽은 마지막에, 처음 16칸이 나오는지가 가장 중요하고, 그 뒤로는 조금씩만 따진다
       const lost = (fit.free ? 0 : 1000) + Math.max(0, 16 - fit.free) * 8 + (CAP_MAX - Math.max(fit.free, 16)) * 0.5;
-      const score = overlapScore(game, site, p[0], p[1], this.tx, this.ty, Math.min(8, fit.cap / 2)) + Math.abs(a) * 2 + lost;
-      if (score < best) { best = score; pick = { tx: this.tx, ty: this.ty, ...fit }; }
+      const score = overlapScore(game, site, this.x, this.y, this.tx, this.ty, Math.min(8, fit.cap / 2)) + Math.abs(a) * 2 + lost;
+      if (score < best) { best = score; pick = { x: this.x, y: this.y, tx: this.tx, ty: this.ty, ...fit }; }
     }
+    this.x = pick.x;
+    this.y = pick.y;
     this.tx = pick.tx;
     this.ty = pick.ty;
     this.nx = -this.ty;
     this.ny = this.tx;
     this.maxCap = pick.cap;
+    this.freeMax = pick.free;
     this.blocked = pick.blocked;
     this.cap = Math.min(CAP_START, this.maxCap);
     this.stalls = new Array(this.cap).fill(null);
     this.used = 0;
     this.paths = new Map();
+    this.active = [];   // 지금 칸 밖에 나와 움직이거나 줄을 선 트럭
+    this.waiting = 0;   // 일을 마치고 칸에서 나갈 차례를 기다리는 트럭
+    this.lead = null;   // 마지막으로 살핀 앞길을 막은 트럭
+    this.leadV = 0;     // 그 트럭의 속도
   }
   // 지금 방향으로 낼 수 있는 칸. 통로를 막는 것 앞에서 끝내 트럭이 도로를 평면으로 건너지 않게 하고,
   // 바닥 위로 지나가는 칸만 비운다
-  fit(obs) {
+  fit(obs, shift) {
     const blocked = new Array(CAP_MAX).fill(false);
     let limit = Infinity;
     for (let i = 0; i < obs.length; i += 3) {
       const dx = obs[i] - this.x, dy = obs[i + 1] - this.y, half = obs[i + 2];
+      if (shift > 0) {
+        // 진입로 끝에서 통로 시작까지 다른 것이 있으면 이 방향은 못 쓴다
+        const a = (obs[i] - this.sx) * this.lx + (obs[i + 1] - this.sy) * this.ly;
+        const b = (obs[i + 1] - this.sy) * this.lx - (obs[i] - this.sx) * this.ly;
+        if (a > 0 && a < shift + half && Math.abs(b) < 0.8 + half) return { cap: 0, free: 0, blocked };
+      }
       const u = dx * this.tx + dy * this.ty, w = dx * this.nx + dy * this.ny;
       const aw = Math.abs(w);
       // 거점 뒤나 거점이 붙어 있는 도로는 막는 것이 아니다
@@ -161,14 +205,17 @@ export class Lot {
   }
   get endU() { return LOT_U0 + Math.ceil(this.cap / 2) * STALL_W + TAIL; }
 
-  // 가까운 칸부터 내준다. 꽉 차면 넓히고, 더 못 넓히면 -1
+  // 들어오는 차로 쪽 줄부터 가까운 순서로 내준다. 맞은편 줄은 나가는 차로를 가로질러야 해서 나중에 쓴다.
+  // 꽉 차면 넓히고, 더 못 넓히면 -1
   take(v) {
     for (;;) {
-      for (let i = 0; i < this.cap; i++) {
-        if (this.stalls[i] || this.blocked[i]) continue;
-        this.stalls[i] = v;
-        this.used++;
-        return i;
+      for (let side = 0; side < 2; side++) {
+        for (let i = side; i < this.cap; i += 2) {
+          if (this.stalls[i] || this.blocked[i]) continue;
+          this.stalls[i] = v;
+          this.used++;
+          return i;
+        }
       }
       if (this.cap >= this.maxCap) return -1;
       const next = Math.min(this.maxCap, this.cap + CAP_STEP);
@@ -177,6 +224,20 @@ export class Lot {
   }
   release(i) {
     if (this.stalls[i]) { this.stalls[i] = null; this.used--; }
+  }
+  canTake() { return this.used < this.freeMax; }
+  // 차로 끝에서 입구로 들어설 수 있는 속도. 앞서 들어간 트럭 꽁무니가 입구에 남아 있으면 0
+  entrySpeed(v, vMax) {
+    let out = vMax;
+    for (let i = 0; i < this.active.length; i++) {
+      const o = this.active[i];
+      if (o.lot.phase !== 'in') continue;
+      const d = o.lot.s - o.len - CLEAR;
+      if (d <= 0) return 0;
+      const q = Math.sqrt(o.v * o.v + 2 * v.brake * d);
+      if (q < out) out = q;
+    }
+    return out;
   }
 
   cached(key, build) {
@@ -188,16 +249,24 @@ export class Lot {
     return bezier(a[0], a[1], t0x, t0y, b[0], b[1], t1x, t1y, 8);
   }
   // 차로 끝에서 칸 안쪽까지. 경로 위 거리가 곧 앞머리 위치다
+  // commitS: 통로에서 칸 쪽으로 꺾기 시작하는 곳
   pathIn(i, laneIndex) {
-    return this.cached(`i${i}:${laneIndex}`, () => {
-      const { u, side } = this.stallPos(i);
-      const wl = laneOffset(laneIndex);
-      const wS = side * AISLE;
-      const ut = Math.max(NECK, u - Math.abs(wS - wl));
-      const start = [this.x - this.ly * wl, this.y + this.lx * wl];
-      const a = this.at(ut, wl), b = this.at(u, wS), c = this.at(u, side * (AISLE + STALL_D - 0.12));
-      return [...this.curve(start, this.lx, this.ly, a, this.tx, this.ty), ...this.curve(a, this.tx, this.ty, b, this.nx * side, this.ny * side).slice(2), ...c];
-    });
+    const key = `i${i}:${laneIndex}`;
+    let path = this.paths.get(key);
+    if (path) return path;
+    const { u, side } = this.stallPos(i);
+    const wl = laneOffset(laneIndex);
+    const wS = side * AISLE;
+    const ut = Math.max(NECK, u - Math.abs(wS - wl));
+    const start = [this.sx - this.ly * wl, this.sy + this.lx * wl];
+    const a = this.at(ut, wl), b = this.at(u, wS), c = this.at(u, side * (AISLE + STALL_D - 0.12));
+    // 모든 트럭이 같은 곡선으로 통로에 들어선 뒤, 자기 칸 앞에서 꺾는다
+    const first = this.curve(start, this.lx, this.ly, this.at(NECK, wl), this.tx, this.ty);
+    const turn = this.curve(a, this.tx, this.ty, b, this.nx * side, this.ny * side);
+    path = new Polyline([...first, ...(ut > NECK ? turn : turn.slice(2)), ...c]);
+    path.commitS = new Polyline(first).len + (ut - NECK);
+    this.paths.set(key, path);
+    return path;
   }
   // 칸에서 통로까지 후진. 경로 위 거리가 곧 꽁무니 위치다
   pathBack(i) {
@@ -218,8 +287,158 @@ export class Lot {
       const ux = u + Math.abs(side * AISLE - we);
       const e = this.at(NECK, we);
       const off = -we;
-      const end = [this.x + this.ly * off, this.y - this.lx * off];
+      const end = [this.sx + this.ly * off, this.sy - this.lx * off];
       return [...this.at(ux + EXIT_PREFIX, we), ...this.curve(e, -this.tx, -this.ty, end, -this.lx, -this.ly)];
     });
+  }
+
+  enter(v) {
+    if (v.lot.active) return;
+    v.lot.active = true;
+    this.active.push(v);
+    this.updateBody(v);
+  }
+  leave(v) {
+    const L = v.lot;
+    L.active = false;
+    L.go = false;
+    L.rest = null;
+    const i = this.active.indexOf(v);
+    if (i >= 0) this.active.splice(i, 1);
+  }
+  // 몸통의 양 끝. a가 가는 쪽 끝이다
+  updateBody(v) {
+    const L = v.lot;
+    pointAt(L.seg, L.s);
+    L.ax = P[0];
+    L.ay = P[1];
+    pointAt(L.seg, L.s - v.len);
+    L.bx = P[0];
+    L.by = P[1];
+  }
+  // (x, y)가 다른 트럭 몸통이나 먼저 들어선 트럭이 갈 길에 닿으면 그 트럭을 돌려준다. (hx, hy)는 내 진행 방향
+  hit(me, x, y, hx, hy) {
+    const list = this.active;
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      if (o === me) continue;
+      const L = o.lot;
+      const dx = L.ax - L.bx, dy = L.ay - L.by;
+      const facing = dx * hx + dy * hy < -0.5 * Math.hypot(dx, dy);
+      if (near(x, y, L.bx, L.by, L.ax, L.ay, facing ? CLEAR_PASS : CLEAR)) return o;
+      // 같은 통로로 들어오는 트럭끼리는 앞차 몸통만 본다. 서로 찜한 길을 보면 앞뒤로 물려 영원히 기다린다
+      const r = L.phase === 'in' && me.lot.phase === 'in' ? null : L.rest;
+      if (!r) continue;
+      for (let j = L.restI * 2; j < r.length; j += 2) {
+        const ex = r[j] - x, ey = r[j + 1] - y;
+        if (ex * ex + ey * ey < CLEAR * CLEAR) return o;
+      }
+    }
+    return null;
+  }
+  // 앞길 dist 안에서 처음 막히는 곳까지의 거리. 막는 것이 없으면 Infinity. 막는 트럭은 lead에, 그 속도는 leadV에 남긴다
+  scan(v, dist) {
+    this.lead = null;
+    this.leadV = 0;
+    if (this.active.length < 2 || dist <= 0) return Infinity;
+    const L = v.lot, seg = L.seg, s0 = L.s;
+    let prev = 0;
+    for (let d = LOOK_STEP; ; d += LOOK_STEP) {
+      const q = Math.min(d, dist);
+      pointAt(seg, s0 + q);
+      let who = this.hit(v, P[0], P[1], P[2], P[3]);
+      if (who) {
+        // 간격이 살피는 간격만큼 덜컥거리지 않게 좁힌다
+        let lo = prev, hi = q;
+        for (let k = 0; k < 3; k++) {
+          const m = (lo + hi) / 2;
+          pointAt(seg, s0 + m);
+          const w = this.hit(v, P[0], P[1], P[2], P[3]);
+          if (w) { hi = m; who = w; } else lo = m;
+        }
+        pointAt(seg, s0 + hi);
+        this.lead = who;
+        const O = who.lot;
+        const dx = O.ax - O.bx, dy = O.ay - O.by;
+        const l = Math.hypot(dx, dy);
+        const dot = l > 0 ? (dx * P[2] + dy * P[3]) / l : 0;
+        this.leadV = dot > 0.5 && O.phase !== 'exit' ? who.v * dot : 0;
+        return lo;
+      }
+      if (q >= dist) return Infinity;
+      prev = q;
+    }
+  }
+  // 앞으로 지날 점들이 다른 트럭과 닿지 않는가. 마주 달려오는 트럭은 설 수 있는 곳까지 차지한 것으로 본다
+  isClear(me, pts) {
+    const list = this.active;
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      if (o === me) continue;
+      const L = o.lot;
+      let fx = L.ax, fy = L.ay;
+      if (o.v > 0.05 && !L.go && L.phase !== me.lot.phase) {
+        L.seg.sample(L.s + (o.v * o.v) / (2 * o.brake) + 0.3, P);
+        fx = P[0];
+        fy = P[1];
+      }
+      const r = L.phase === 'in' && me.lot.phase === 'in' ? null : L.rest;
+      for (let j = 0; j < pts.length; j += 2) {
+        const x = pts[j], y = pts[j + 1];
+        if (near(x, y, L.bx, L.by, L.ax, L.ay, CLEAR) || near(x, y, L.ax, L.ay, fx, fy, CLEAR)) return false;
+        if (!r) continue;
+        for (let q = L.restI * 2; q < r.length; q += 2) {
+          const ex = r[q] - x, ey = r[q + 1] - y;
+          if (ex * ex + ey * ey < CLEAR * CLEAR) return false;
+        }
+      }
+    }
+    return true;
+  }
+  // 경로 seg의 s0부터 끝까지 찍은 점들
+  pointsOn(seg, s0, s1, out) {
+    for (let s = s0; ; s += LOOK_STEP) {
+      seg.sample(Math.min(s, s1), P);
+      out.push(P[0], P[1]);
+      if (s >= s1) return out;
+    }
+  }
+  // 이제부터 이 길은 이 트럭 것이다. 다른 트럭이 비켜 주므로 더 살피지 않고 간다
+  commit(v, pts, s0, n0) {
+    const L = v.lot;
+    L.go = true;
+    L.rest = pts;
+    L.restI = 0;
+    L.restS0 = s0;
+    L.restN = n0;
+  }
+  // 칸에 든 트럭이 후진을 시작해도 되는가. 후진을 마치고 설 자리까지 비어 있어야 한다
+  tryBack(v) {
+    const L = v.lot;
+    const pts = this.pointsOn(L.seg, L.s, L.seg.len, []);
+    const n0 = pts.length / 2;
+    this.pointsOn(this.pathOut(L.stall), EXIT_PREFIX, EXIT_PREFIX + v.len + 0.1, pts);
+    if (!this.isClear(v, pts)) return false;
+    this.commit(v, pts, L.s, n0);
+    this.waiting--;
+    this.enter(v);
+    return true;
+  }
+  // 통로를 달리던 트럭이 칸 쪽으로 꺾어도 되는가. force면 비어 있지 않아도 들어선다
+  // 꺾은 뒤의 길이 비었는지만 보고, 꺾을 곳까지 남은 통로도 함께 찜해 둔다
+  tryTurn(v, force) {
+    const L = v.lot, seg = L.seg;
+    const turnS = Math.max(L.s, seg.commitS);
+    const pts = this.pointsOn(seg, turnS, seg.len, []);
+    if (!force && !this.isClear(v, pts)) return false;
+    const all = turnS > L.s ? this.pointsOn(seg, L.s, seg.len, []) : pts;
+    this.commit(v, all, L.s, all.length / 2);
+    return true;
+  }
+  // 지나온 길은 내어 준다
+  passRest(v) {
+    const L = v.lot;
+    if (!L.rest) return;
+    while (L.restI < L.restN && L.restS0 + (L.restI + 1) * LOOK_STEP < L.s) L.restI++;
   }
 }
