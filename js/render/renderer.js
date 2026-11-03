@@ -902,7 +902,7 @@ export class Renderer {
         }
       } else if (midClose) {
         this.drawNodeIcon(ctx, n, k, 15);
-      } else if (n.control !== 'auto' || n.inE.some((e) => e.sign > 0)) {
+      } else if (k < 0.5 && (n.control !== 'auto' || n.inE.some((e) => e.sign > 0))) {
         this.drawNodeIcon(ctx, n, k, 11);
       }
     }
