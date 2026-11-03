@@ -1,5 +1,7 @@
 # 팔도 트래픽
 
+**바로 플레이: https://ysh4267.github.io/paldo-traffic/**
+
 대한민국 실제 도로망 위에서 트럭을 굴리고, 표지판과 신호등과 차로로 정체를 풀며 전국 물류망을 완성하는 인크리멘탈 웹게임입니다.
 
 Rischer Kriebl의 [Incremental Traffic](https://store.steampowered.com/app/5475960/Incremental_Traffic/)에서 영감을 받아 한국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았고, 게임 안의 그림은 모두 코드로 그린 벡터입니다.
