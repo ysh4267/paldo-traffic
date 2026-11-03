@@ -136,6 +136,7 @@ class App {
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     this.applyCameraPadding();
     if (wasHidden && window.innerWidth >= 2 && window.innerHeight >= 2) {
+      if (this.ui) this.ui.collapsed = window.innerWidth < 760;
       if (this.started) this.fitToStage(0);
       else this.fitBoxAll(0);
     }
