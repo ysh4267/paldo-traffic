@@ -49,7 +49,7 @@ export const TRUCKS = [
 ];
 
 // 권역별 진행 목표 (납품 실적 점수)
-export const REGION_GOAL = [260, 800, 2200, 5000, 11000, 14000, 45000, 100000, 300000];
+export const REGION_GOAL = [260, 800, 2200, 5000, 11000, 14000, 32000, 70000, 200000];
 export const ENDLESS_GOAL_BASE = 800000;
 
 // 일회성 연구

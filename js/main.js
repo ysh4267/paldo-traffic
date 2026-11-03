@@ -338,6 +338,7 @@ class App {
         ui.toast(icon, `새 거점: ${e.site.name}`, e.site.produces ? '눌러서 트럭을 배치하세요' : '새 납품처가 열렸습니다', () => ui.goSite(e.site));
       } else if (e.type === 'city') {
         r.ping(e.site.x, e.site.y, '#f6b01e');
+        r.baseDirty = true;
         if (e.stage >= 2) ui.toast('city', `${e.site.name}이(가) 성장했습니다`, `납품 운임 +${e.stage * 8}%`, () => ui.goSite(e.site));
       } else if (e.type === 'tech') {
         ui.toast(e.tech.icon, `${e.tech.name} 연구 완료`);

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import { Game } from '../js/game/game.js';
 import { TECHS, UPGRADES, TRUCKS, GOODS, fmtWon, fmtTime } from '../js/game/defs.js';
+import { dumpJams } from './lib/dump.mjs';
 
 const data = JSON.parse(fs.readFileSync('data/korea.json', 'utf8'));
 const MINUTES = Number(process.argv[2]) || 30;
@@ -136,3 +137,4 @@ for (const r of g.net.roads) if (r.lanes > (r.kind === 'x' ? 2 : 1)) stat.lanes+
 for (const n of g.net.nodes) if (stat[n.control] !== undefined) stat[n.control]++;
 console.log('final', JSON.stringify(stat), 'acts', JSON.stringify(acts), 'maxTrucks', maxTrucks, 'routes open', [...g.routes.values()].filter((r) => r.trucks.length).length, '/', g.routes.size);
 console.log('sim speed:', (total / ((Date.now() - t0) / 1000)).toFixed(0), 'x, avg step', (stepMs / steps).toFixed(3), 'ms');
+if (process.argv[5] === 'dump') dumpJams(g);

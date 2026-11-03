@@ -263,6 +263,7 @@ export class Renderer {
     // 독도·울릉도는 어떤 축척에서도 보이게
     this.drawDokdo(b, px);
 
+    this.drawGround(b, k);
     this.drawRoadsOnBase(b, px, k);
     this.drawBaseLabels(b, px, k, ox, oy, s);
     this.baseDirty = false;
@@ -806,10 +807,13 @@ export class Renderer {
   }
 
   signalColor(n, e) {
-    if (n.clearT > 0) return '#f6b01e';
-    const ph = n.phases && n.phases[n.phase];
-    if (!ph) return '#e8402f';
-    for (const t of e.turnList || []) if (ph.allow[t.id] && t.kind !== 'R') return '#27c46b';
+    if (!n.allow) return '#e8402f';
+    const list = e.turnList || [];
+    if (n.clearT > 0) {
+      for (const t of list) if (n.prevAllow[t.id] && t.kind !== 'R') return '#f6b01e';
+      return '#e8402f';
+    }
+    for (const t of list) if (n.allow[t.id] && t.kind !== 'R') return '#27c46b';
     return '#e8402f';
   }
 
@@ -871,8 +875,7 @@ export class Renderer {
       const w = size * k, h = size * 0.42 * k;
       ctx.fillStyle = '#23282c';
       ctx.fillRect(n.x - w / 2, n.y - h / 2, w, h);
-      const col = n.clearT > 0 ? '#f6b01e' : ['#27c46b', '#e8402f'][n.phase % 2];
-      ctx.fillStyle = col;
+      ctx.fillStyle = n.clearT > 0 ? '#f6b01e' : '#27c46b';
       ctx.beginPath();
       ctx.arc(n.x, n.y, h * 0.34, 0, Math.PI * 2);
       ctx.fill();
@@ -990,8 +993,6 @@ export class Renderer {
         continue;
       }
       const r = this.siteBadgeSize(s);
-      if (s.isCity && k < 0.34) this.drawCityCluster(ctx, s, x, y);
-      else if (!s.isCity && k < 0.2) this.drawSiteDecor(ctx, s, x, y);
       this.drawBadge(ctx, s, x, y, r);
       if (k < 0.24 || (s.isCity && (k < 0.6 || s.pop > 90)) || this.selection?.site === s || this.hover?.site === s || this.tutorTarget === s) {
         this.drawSiteLabel(ctx, s, x, y, r, labelBoxes);
@@ -1113,31 +1114,28 @@ export class Renderer {
     ctx.closePath();
   }
 
-  // 도시 성장: 집 → 아파트 → 고층빌딩을 절차적으로 그린 스프라이트
-  drawCityCluster(ctx, s, x, y) {
-    const k = this.cam.k;
-    const scale = Math.min(1.5, Math.max(0.5, 0.11 / k));
-    const key = `${s.id}:${s.cityStage}`;
-    let spr = this.cityCache.get(key);
-    if (!spr) {
-      spr = makeCitySprite(s);
-      this.cityCache.set(key, spr);
+  // 도시 건물과 거점 풍경은 도로 아래에 깔린다 (월드 좌표)
+  drawGround(b, k) {
+    const game = this.game;
+    if (k >= 0.34) return;
+    for (const s of game.sites) {
+      if (!s.available) continue;
+      if (!this.nodeInView(game.net.nodes[s.node], 120)) continue;
+      if (s.isCity && s.kind === 'city') {
+        const scale = Math.min(1.5, Math.max(0.5, 0.11 / k));
+        const key = `${s.id}:${s.cityStage}`;
+        let spr = this.cityCache.get(key);
+        if (!spr) { spr = makeCitySprite(s); this.cityCache.set(key, spr); }
+        const w = (spr.width / 2) * scale * k, h = (spr.height / 2) * scale * k;
+        b.drawImage(spr, s.x - w / 2, s.y - h * 0.62, w, h);
+      } else if (!s.isCity && k < 0.2) {
+        let spr = this.decorCache.get(s.id);
+        if (!spr) { spr = makeSiteDecor(s); this.decorCache.set(s.id, spr); }
+        const scale = Math.min(1.6, 0.08 / k);
+        const w = (spr.width / 2) * scale * k, h = (spr.height / 2) * scale * k;
+        b.drawImage(spr, s.x - w / 2, s.y - h / 2, w, h);
+      }
     }
-    const w = (spr.width / 2) * scale, h = (spr.height / 2) * scale;
-    ctx.drawImage(spr, x - w / 2, y - h * 0.62, w, h);
-  }
-
-  // 거점 주변 풍경 (과수원 나무, 논밭, 컨테이너 야적장 등)
-  drawSiteDecor(ctx, s, x, y) {
-    const k = this.cam.k;
-    let spr = this.decorCache.get(s.id);
-    if (!spr) {
-      spr = makeSiteDecor(s);
-      this.decorCache.set(s.id, spr);
-    }
-    const scale = Math.min(1.6, 0.08 / k);
-    const w = (spr.width / 2) * scale, h = (spr.height / 2) * scale;
-    ctx.drawImage(spr, x - w / 2, y - h / 2, w, h);
   }
 
   drawPings(ctx, dt) {

@@ -594,7 +594,7 @@ export class UI {
       body.push(h('div', { class: 'sec', key: 'signs' }, h('h3', null, '진입 방향별 표지'), rows, h('p', { class: 'note', key: 'nt' }, anySign ? '표지가 없는 방향이 우선 도로입니다.' : n.major.size ? '고속도로 직진 흐름이 기본 우선입니다.' : '표지가 없으면 먼저 온 차부터 번갈아 지나갑니다.')));
     }
     if (n.control === 'signal') {
-      body.push(h('div', { class: 'sec', key: 'sig' }, h('h3', null, '신호 현시', h('span', null, `${n.phases.length}단계`)), h('p', { class: 'note' }, g.techs.has('smartsig') ? '감응 신호가 대기열을 보고 녹색 시간을 조절합니다.' : '방향별로 3.4초씩 번갈아 보냅니다. 연구에서 감응 신호를 배우면 더 똑똑해집니다.')));
+      body.push(h('div', { class: 'sec', key: 'sig' }, h('h3', null, '신호 운영'), h('p', { class: 'note' }, g.techs.has('smartsig') ? '감응 신호가 차가 빠지는 동안 녹색을 최대 8초까지 늘리고, 막히면 일찍 끊습니다.' : '기다리는 방향을 보고 충돌 없는 흐름끼리 묶어 4.6초씩 보냅니다. 감응 신호를 연구하면 더 똑똑해집니다.')));
     }
     if (stuck || n.waiting > 6) {
       const canTow = g.techs.has('tow');
@@ -670,7 +670,7 @@ export class UI {
       const lv = g.upg[u.id];
       const cost = g.upgradeCostOf(u.id);
       const maxed = lv >= u.max;
-      return h('div', { class: `card${!maxed && g.money >= cost ? ' can' : ''}`, key: u.id }, ico(u.icon), h('div', null, h('h4', null, u.name, h('span', null, `Lv.${lv}`)), h('p', null, u.desc, ' 지금 ', h('b', null, u.fmt(lv * u.per))),
+      return h('div', { class: `card${!maxed && g.money >= cost ? ' can' : ''}`, key: u.id }, ico(u.icon), h('div', null, h('h4', null, u.name, h('span', null, `Lv.${lv}`)), h('p', null, u.desc, ' ', h('b', null, u.fmt(lv * u.per)), lv < u.max && ` → ${u.fmt((lv + 1) * u.per)}`),
         !maxed ? h('button', { class: 'btn buy', disabled: g.money < cost, onclick: () => { if (g.buyUpg(u.id)) { this.sound.buy(); this.renderModal(); this.renderTop(); } } }, '향상', h('span', { class: 'price' }, fmtWon(cost))) : h('span', { class: 'chip ok' }, '최고 단계')));
     });
     return h('div', { class: 'dialog', role: 'dialog', 'aria-label': '연구' },

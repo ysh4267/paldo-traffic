@@ -6,9 +6,8 @@ export const BRK = 9;
 export const GAP = 0.32;   // 앞차와의 최소 간격 km
 const STOP_MARGIN = 0.04;
 const GRANT_MARGIN = 0.7;
-const SIGNAL_GREEN = 3.4;
-const SIGNAL_CLEAR = 0.55;
-const SMART_MIN = 1.2;
+const SIGNAL_GREEN = 4.6;
+const SIGNAL_CLEAR = 0.45;
 const SMART_MAX = 8;
 const V_AUTO = 0.4;        // 비보호 교차로 통과 속도 비율
 const V_TURN = 0.5;
@@ -42,6 +41,7 @@ export class Vehicle {
     this.resLane = null;
     this.ringNode = null;
     this.ringList = null;
+    this.mergeLead = null;
     this.odo = 0;
     this.state = 'idle'; // idle | road | bay | queue | ship
     this.cargo = 0;
@@ -260,8 +260,7 @@ export class Traffic {
       // 신호 확인
       let signalOk = true;
       if (control === 'signal') {
-        const ph = node.phases[node.phase];
-        signalOk = node.clearT <= 0 && ph.allow[turn.id] === 1;
+        signalOk = node.clearT <= 0 && node.allow[turn.id] === 1;
         if (!signalOk && turn.kind === 'R' && f.v < 1.4) signalOk = true; // 적신호 우회전
         if (!signalOk) continue;
       }
@@ -292,7 +291,6 @@ export class Traffic {
       if (target) {
         for (const b of blocked) {
           if (turn.cross[b.turn.id] && control !== 'interchange') { target = null; conflicted = true; break; }
-          if (turn.merge[b.turn.id] && b.tl === target) { target = null; conflicted = true; break; }
         }
       }
 
@@ -316,12 +314,8 @@ export class Traffic {
       const a = act[i];
       if (a === f) continue;
       const u = a.resTurn;
-      if (u === turn) {
-        if (a.resLane === tl && a.resFrom !== f.lane) return true;
-        continue;
-      }
+      if (u === turn) continue;
       if (turn.cross[u.id] && control !== 'interchange') return true;
-      if (turn.merge[u.id] && a.resLane === tl) return true;
     }
     return false;
   }
@@ -352,6 +346,8 @@ export class Traffic {
     f.nextConn = conn;
     f.targetLane = tl;
     tl.pending += f.len + GAP;
+    f.mergeLead = tl.lastGranted && tl.lastGranted !== f && tl.lastGranted.targetLane === tl ? tl.lastGranted : null;
+    tl.lastGranted = f;
     f.res = node;
     f.resTurn = turn;
     f.resLane = tl;
@@ -361,6 +357,7 @@ export class Traffic {
     f.waitT = 0;
     f.stopT = 0;
     node.flowCount++;
+    node.lastGrant = this.time;
     turn.flow++;
   }
 
@@ -410,7 +407,7 @@ export class Traffic {
       const conn = this.net.getConn(f.lane, tl, ringIdx);
       const list = node.ring[ringIdx];
       const C = conn.ringC;
-      if (list.length * (need + 0.4) > C * 0.92) continue;
+      if (list.length * need > C * 0.86) continue;
       let ok = true;
       const entryV = conn.ringP0;
       const dist = (L1) => ((L1 % C) + C) % C;
@@ -419,14 +416,16 @@ export class Traffic {
         const remain = w.conn ? w.conn.ringS1 - w.s : w.nextConn.ringS1 + (w.lane.edge.L - w.s);
         const behind = dist(entryV - pw);
         const ahead = dist(pw - entryV);
-        if (ahead < w.len + GAP + f.len * 0.5) { ok = false; break; }
-        if (behind < vRing * 0.85 + need && remain > behind - 0.3) { ok = false; break; }
+        if (ahead < w.len + GAP * 0.5) { ok = false; break; }
+        if (behind < vRing * 0.32 + need * 0.55 && remain > behind - 0.3) { ok = false; break; }
       }
       if (!ok) continue;
       f.granted = true;
       f.nextConn = conn;
       f.targetLane = tl;
       tl.pending += need;
+      f.mergeLead = tl.lastGranted && tl.lastGranted !== f && tl.lastGranted.targetLane === tl ? tl.lastGranted : null;
+      tl.lastGranted = f;
       f.connV = vRing;
       f.waitT = 0;
       f.ringNode = node;
@@ -484,6 +483,14 @@ export class Traffic {
         const [g2, v2] = this.ringLeaderGap(c);
         if (g2 < gap) { gap = g2; leadV = v2; }
       }
+      const ml = c.mergeLead;
+      if (ml) {
+        if (ml.targetLane === tl) {
+          const dLead = ml.conn ? ml.conn.len - ml.s : (ml.lane ? ml.lane.edge.L - ml.s + ml.nextConn.len : 0);
+          const g3 = conn.len - c.s - dLead - ml.len - GAP;
+          if (g3 < gap) { gap = g3; leadV = ml.v; }
+        } else c.mergeLead = null;
+      }
       let vNew = c.v + ACC * dt;
       if (vNew > c.connV) vNew = Math.max(c.connV, c.v - BRK * dt);
       if (gap !== Infinity) {
@@ -511,6 +518,7 @@ export class Traffic {
       c.granted = false;
       c.nextConn = null;
       c.targetLane = null;
+      c.mergeLead = null;
       tl.veh.push(c);
       this.activate(tl);
     }
@@ -540,6 +548,14 @@ export class Traffic {
             if (t) { gap = dStop + conn.len + t.s - t.len - GAP; leadV = t.v; }
             else { gap = Infinity; leadV = 0; }
           }
+          const ml = c.mergeLead;
+          if (ml) {
+            if (ml.targetLane === c.targetLane) {
+              const dLead = ml.conn ? ml.conn.len - ml.s : (ml.lane ? ml.lane.edge.L - ml.s + ml.nextConn.len : 0);
+              const g3 = dStop + conn.len - dLead - ml.len - GAP;
+              if (g3 < gap) { gap = g3; leadV = ml.v; }
+            } else c.mergeLead = null;
+          }
           const lim = Math.sqrt(c.connV * c.connV + 2 * BRK * Math.max(dStop, 0));
           if (lim < vLim) vLim = lim;
         } else {
@@ -566,7 +582,7 @@ export class Traffic {
       const ds = vNew * dt;
       c.s += ds;
       c.odo += ds;
-      if (c.res && (c.s >= c.len || c.s >= L - 0.1)) this.releaseRes(c);
+      if (c.res && c.resLane === lane && (c.s >= c.len || c.s >= L - 0.1)) this.releaseRes(c);
     }
     if (!vs.length && lane.lastExit) {
       const le = lane.lastExit;
@@ -618,9 +634,11 @@ export class Traffic {
       if (f.conn.fromLane.lastExit === f) f.conn.fromLane.lastExit = null;
       f.conn = null;
     }
+    if (f.targetLane && f.targetLane.lastGranted === f) f.targetLane.lastGranted = null;
     f.granted = false;
     f.nextConn = null;
     f.targetLane = null;
+    f.mergeLead = null;
     f.state = 'idle';
     f.v = 0;
   }
@@ -678,49 +696,88 @@ export class Traffic {
   }
 
   // ── 신호 ──────────────────────────────────────────────
+  // 고정된 현시표 대신, 지금 기다리는 흐름을 보고 충돌 없는 움직임끼리 묶어 내보낸다
   updateSignal(n, dt) {
-    if (!n.phases || !n.phases.length) return;
+    if (!n.allow) return;
     if (n.clearT > 0) {
       n.clearT -= dt;
+      if (n.clearT <= 0) {
+        n.allow = n.nextAllow;
+        n.phaseT = SIGNAL_GREEN;
+        n.greenT = 0;
+      }
       return;
     }
     n.phaseT -= dt;
-    const ph = n.phases[n.phase];
+    n.greenT += dt;
+    const demand = this.allowedDemand(n);
+    if (demand === 0 && n.greenT > 1.2) n.phaseT = 0;
     if (this.smartSignals) {
-      // 감응 신호: 대기 차가 없으면 일찍 끊고, 몰리면 연장한다
-      const demand = this.phaseDemand(n, n.phase);
-      const elapsed = ph.green - n.phaseT;
-      if (demand === 0 && elapsed > SMART_MIN) n.phaseT = 0;
-      else if (n.phaseT <= 0 && demand > 2 && elapsed < SMART_MAX) n.phaseT = 0.6;
+      // 감응 신호: 실제로 차가 빠져나가는 동안만 녹색을 늘리고, 앞차가 막혀 있으면 일찍 끊는다
+      const idle = this.time - (n.lastGrant || 0);
+      if (n.greenT > 1.4 && idle > 1.1) n.phaseT = 0;
+      else if (n.phaseT <= 0 && idle < 0.8 && n.greenT < SMART_MAX) n.phaseT = 0.5;
     }
     if (n.phaseT > 0) return;
-    // 수요가 있는 다음 현시로
-    let nxt = n.phase;
-    let bestD = 0;
-    for (let i = 1; i <= n.phases.length; i++) {
-      const k = (n.phase + i) % n.phases.length;
-      const d = this.phaseDemand(n, k);
-      if (d > 0) { nxt = k; bestD = d; break; }
-    }
-    if (nxt !== n.phase) { n.phase = nxt; n.clearT = SIGNAL_CLEAR; }
-    n.phaseT = n.phases[n.phase].green;
-    return bestD;
+    const next = this.pickAllow(n);
+    if (!next) { n.phaseT = 0.5; return; }
+    n.prevAllow = n.allow;
+    n.nextAllow = next;
+    n.allow = n.emptyAllow;
+    n.clearT = SIGNAL_CLEAR;
   }
 
-  phaseDemand(n, k) {
-    const ph = n.phases[k];
-    let d = 0;
+  // 차로 앞쪽 트럭들이 원하는 움직임별 수요
+  turnDemand(n) {
+    const d = n.demandBuf;
+    d.fill(0);
     for (const e of n.inE) {
       for (const lane of e.lanes) {
-        const f = lane.veh[0];
-        if (!f || f.granted || f.pi >= f.path.length - 1) continue;
-        if (e.L - f.s > 7) continue;
-        const nx = f.path[f.pi + 1];
-        const t = e.turns.get(nx.id);
-        if (t && ph.allow[t.id]) d += lane.veh.length;
+        const vs = lane.veh;
+        for (let i = 0; i < vs.length && i < 5; i++) {
+          const f = vs[i];
+          if (f.granted || f.pi >= f.path.length - 1) continue;
+          if (e.L - f.s > 9) break;
+          const nx = f.path[f.pi + 1];
+          const t = e.turns.get(nx.id);
+          if (t) d[t.id] += i === 0 ? 3 : 1;
+        }
       }
     }
     return d;
+  }
+
+  allowedDemand(n) {
+    const d = this.turnDemand(n);
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) if (n.allow[i]) sum += d[i];
+    return sum;
+  }
+
+  pickAllow(n) {
+    const d = this.turnDemand(n);
+    // 가장 오래 못 간 방향을 기준으로 잡는다
+    let seed = null, best = 0;
+    for (const e of n.inE) {
+      let q = 0;
+      for (const t of e.turnList || []) q += d[t.id];
+      if (q === 0) continue;
+      const score = q + (this.time - (e.lastGreen || 0)) * 1.1;
+      if (score > best) { best = score; seed = e; }
+    }
+    if (!seed) return null;
+    const turns = n.turns;
+    const allow = new Uint8Array(turns.length);
+    const chosen = [];
+    for (const t of seed.turnList) if (d[t.id] > 0) { allow[t.id] = 1; chosen.push(t); }
+    // 함께 보낼 수 있는 다른 흐름
+    const rest = turns.filter((t) => t.from !== seed && d[t.id] > 0).sort((p, q) => d[q.id] - d[p.id]);
+    const compatible = (t) => { for (const c of chosen) if (t.cross[c.id]) return false; return true; };
+    for (const t of rest) if (compatible(t)) { allow[t.id] = 1; chosen.push(t); }
+    // 지금 수요가 없어도 충돌 없는 움직임은 열어 둔다
+    for (const t of turns) if (!allow[t.id] && compatible(t)) allow[t.id] = 1;
+    for (const c of chosen) c.from.lastGreen = this.time;
+    return allow;
   }
 
   // 교차로 형태 변경
@@ -729,11 +786,16 @@ export class Traffic {
     if (prev === control) return;
     n.control = control;
     this.signalNodes.delete(n);
-    n.phases = null;
+    n.allow = null;
     if (control === 'signal') {
-      n.phases = buildPhases(n);
-      n.phase = 0;
-      n.phaseT = n.phases[0] ? n.phases[0].green : SIGNAL_GREEN;
+      const T = n.turns.length;
+      n.emptyAllow = new Uint8Array(T);
+      n.allow = n.emptyAllow;
+      n.prevAllow = n.emptyAllow;
+      n.nextAllow = n.emptyAllow;
+      n.demandBuf = new Float32Array(T);
+      n.phaseT = 0;
+      n.greenT = 0;
       n.clearT = 0;
       this.signalNodes.add(n);
     }
@@ -801,27 +863,3 @@ export class Traffic {
     return null;
   }
 }
-
-// 충돌하지 않는 움직임끼리 묶어 신호 현시를 만든다
-export function buildPhases(n) {
-  const turns = n.turns;
-  const phases = [];
-  const done = new Uint8Array(turns.length);
-  const order = turns.slice().sort((a, b) => rank(a) - rank(b));
-  for (const seed of order) {
-    if (done[seed.id]) continue;
-    const allow = new Uint8Array(turns.length);
-    const members = [seed];
-    allow[seed.id] = 1;
-    for (const t of order) {
-      if (allow[t.id]) continue;
-      let ok = true;
-      for (const m of members) if (t.cross[m.id] || m.cross[t.id]) { ok = false; break; }
-      if (ok) { allow[t.id] = 1; members.push(t); }
-    }
-    for (const m of members) done[m.id] = 1;
-    phases.push({ allow, members, green: SIGNAL_GREEN });
-  }
-  return phases;
-}
-function rank(t) { return t.kind === 'S' ? 0 : t.kind === 'L' ? 1 : 2; }
