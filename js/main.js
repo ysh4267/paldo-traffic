@@ -3,7 +3,7 @@ import { Game } from './game/game.js';
 import { Renderer } from './render/renderer.js';
 import { UI } from './ui/ui.js';
 import { Sound } from './ui/audio.js';
-import { fmtWon } from './game/defs.js';
+import { fmtWon, josa } from './game/defs.js';
 import { iconHtml } from './render/art.js';
 
 const SAVE_KEY = 'paldo-traffic-save-v1';
@@ -123,8 +123,6 @@ class App {
     this.speed = v;
     this.ui.renderTop();
   }
-
-  notifyBought() { /* 튜토리얼 등에서 확장 */ }
 
   // ── 화면 ───────────────────────────────────────────
   onResize() {
@@ -352,7 +350,7 @@ class App {
       } else if (e.type === 'city') {
         r.ping(e.site.x, e.site.y, '#f6b01e');
         r.baseDirty = true;
-        if (e.stage >= 2) ui.toast('city', `${e.site.name}이(가) 성장했습니다`, `납품 운임 +${e.stage * 8}%`, () => ui.goSite(e.site));
+        if (e.stage >= 2) ui.toast('city', `${josa(e.site.name, '이', '가')} 성장했습니다`, `납품 운임 +${e.stage * 8}%`, () => ui.goSite(e.site));
       } else if (e.type === 'tech') {
         ui.toast(e.tech.icon, `${e.tech.name} 연구 완료`);
         ui.renderDock();

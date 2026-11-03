@@ -1,7 +1,7 @@
 // 화면 UI 전체: 상단 안내판, 도구 독, 정보 패널, 창, 알림
 import { h, ico, raw, patch } from './dom.js';
 import { iconHtml, routeShield } from '../render/art.js';
-import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, TIER_NAME, REGION_GOAL, fmtWon, fmtKo, fmtTon, fmtTime } from '../game/defs.js';
+import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, TIER_NAME, REGION_GOAL, fmtWon, fmtKo, fmtTon, fmtTime, josa } from '../game/defs.js';
 import { LANE_W } from '../sim/network.js';
 
 export const TOOLS = [
@@ -43,6 +43,7 @@ export class UI {
     this.sel = null;
     this.tool = 'select';
     this.modelSel = 0;
+    this.buyCount = 1;
     this.modalName = null;
     this.modalData = null;
     this.collapsed = window.innerWidth < 760;
@@ -120,7 +121,7 @@ export class UI {
     this.sound.click();
     if (t.tech && !this.game.techs.has(t.tech)) {
       const tech = TECHS.find((q) => q.id === t.tech);
-      this.toast('lock', `${t.name}은(는) 아직 쓸 수 없습니다`, this.game.techVisible(tech) ? '연구 창에서 연구하세요' : '권역을 더 개발하면 연구가 열립니다');
+      this.toast('lock', `${josa(t.name, '은', '는')} 아직 쓸 수 없습니다`, this.game.techVisible(tech) ? '연구 창에서 연구하세요' : '권역을 더 개발하면 연구가 열립니다');
       this.sound.deny();
       if (this.game.techVisible(tech)) this.openModal('research');
       return;
@@ -512,11 +513,18 @@ export class UI {
     if (!g.modelUnlocked(this.modelSel)) this.modelSel = 0;
     const m = this.modelSel;
     const routes = s.routesOut.filter((q) => q.valid).sort((a, b) => a.dist - b.dist);
+    if (routes.length) {
+      kids.push(h('div', { class: 'seg count-seg', key: 'buyn' }, [[1, '1대씩'], [5, '5대'], [10, '10대'], [0, '최대']].map(([n, label]) => h('button', {
+        key: String(n), class: this.buyCount === n ? 'on' : '', onclick: () => { this.buyCount = n; this.sound.click(); this.renderInspector(true); },
+      }, label))));
+    }
     if (!routes.length) kids.push(h('p', { class: 'note', key: 'nor' }, '아직 이 화물을 받아줄 곳이 없습니다. 권역을 더 개발하면 열립니다.'));
     for (const q of routes) {
       const cap = g.truckCap(TRUCKS[m]);
       const trip = q.perTon * cap * (1 + g.upg.pay * 0.14);
-      const price = g.truckPrice(q, m);
+      const afford = g.truckAffordable(q, m);
+      const n = this.buyCount === 0 ? Math.max(1, afford) : this.buyCount;
+      const price = g.truckBatchPrice(q, m, n);
       kids.push(h('div', {
         class: `route-card${!q.opened && routes.some((x) => x.opened) ? ' new' : ''}`, key: q.id,
         onmouseenter: () => this.updateHighlights(q), onmouseleave: () => this.updateHighlights(),
@@ -527,8 +535,12 @@ export class UI {
         h('div', { class: 'count', 'data-tip': '이 노선의 트럭 수' }, q.trucks.length, h('small', null, '대')),
         h('button', {
           class: 'btn buy', disabled: g.money < price,
-          onclick: () => { if (g.buyTruck(q, m)) { this.sound.buy(); this.updateHighlights(); this.renderInspector(true); this.renderTop(); this.app.notifyBought(q); } else this.sound.deny(); },
-        }, `${TRUCKS[m].short} 트럭 구매`, h('span', { class: 'price' }, fmtWon(price))),
+          onclick: () => {
+            let bought = 0;
+            for (let i = 0; i < n; i++) { if (g.buyTruck(q, m)) bought++; else break; }
+            if (bought) { this.sound.buy(); this.updateHighlights(); this.renderInspector(true); this.renderTop(); } else this.sound.deny();
+          },
+        }, `${TRUCKS[m].short} ${n > 1 ? `${n}대` : '트럭'} 구매`, h('span', { class: 'price' }, fmtWon(price))),
         h('button', {
           class: 'btn sell', disabled: !q.trucks.length, 'aria-label': '트럭 한 대 처분', 'data-tip': '트럭 한 대를 처분합니다 (구매가의 50% 환급).\n도로가 막힐 때 숨통을 틔웁니다.',
           onclick: () => { if (g.sellTruck(q)) { this.sound.click(); this.renderInspector(true); } },

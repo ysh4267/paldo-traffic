@@ -562,6 +562,20 @@ export class Game {
     return route.perTon * m.priceF * TRUCK_K * Math.pow(TRUCK_G, count);
   }
 
+  // n대를 한꺼번에 살 때 값 (대수에 따라 값이 오른다)
+  truckBatchPrice(route, modelIdx, n) {
+    const first = this.truckPrice(route, modelIdx);
+    return first * ((Math.pow(TRUCK_G, n) - 1) / (TRUCK_G - 1));
+  }
+  // 지금 돈으로 살 수 있는 최대 대수 (최소 1)
+  truckAffordable(route, modelIdx, limit = 200) {
+    let n = 0;
+    let price = this.truckPrice(route, modelIdx);
+    let money = this.money;
+    while (n < limit && money >= price) { money -= price; price *= TRUCK_G; n++; }
+    return n;
+  }
+
   modelUnlocked(modelIdx) {
     const t = TRUCKS[modelIdx].tech;
     return !t || this.techs.has(t);

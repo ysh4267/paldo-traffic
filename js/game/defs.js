@@ -107,6 +107,13 @@ export function fmtKo(n, digits = 3) {
   return (neg ? '-' : '') + Math.round(v).toLocaleString('en-US');
 }
 export const fmtWon = (n, d) => '₩' + fmtKo(n, d);
+
+// 받침에 맞는 조사 (이/가, 은/는, 을/를)
+export function josa(word, withFinal, withoutFinal) {
+  const code = word.charCodeAt(word.length - 1);
+  const hasFinal = code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 > 0;
+  return word + (hasFinal ? withFinal : withoutFinal);
+}
 export function fmtTon(n) {
   if (n >= 1e4) return fmtKo(n) + 't';
   if (n >= 100) return Math.round(n).toLocaleString('en-US') + 't';
