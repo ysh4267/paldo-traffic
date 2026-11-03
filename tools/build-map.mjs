@@ -34,7 +34,11 @@ function decodeTopo(topo) {
 function buildProvinces() {
   const { arcs, geoms } = decodeTopo(readRaw('geo/skorea-provinces-2018-topo.json'));
   // 호(arc) 단위로 단순화해야 도 경계에 틈이 안 생긴다
-  const simple = arcs.map((a) => simplify(a, 0.12));
+  const inland = (a) => a.length > 1 && dist(a[0], a[a.length - 1]) > 0;
+  const shared = new Map();
+  for (const g of geoms) for (const poly of (g.type === 'Polygon' ? [g.arcs] : g.arcs)) for (const r of poly) for (const i of r) { const k = i >= 0 ? i : ~i; shared.set(k, (shared.get(k) || 0) + 1); }
+  // 두 시도가 함께 쓰는 호는 내륙 경계이므로 크게 다듬고, 해안선은 모양을 유지한다
+  const simple = arcs.map((a, i) => (shared.get(i) >= 2 && inland(a) ? simplify(gaussianSmooth(a, 1.6, 0.3), 0.15) : simplify(a, 0.12)));
   const raw = arcs;
   const ringOf = (idx, src) => {
     const out = [];
@@ -286,7 +290,7 @@ function buildWater() {
   for (const [name, lines] of byName) {
     for (const l of chainPolylines(lines)) {
       if (polyLength(l) < 4) continue;
-      const s = chaikin(simplify(l, 0.35), 1);
+      const s = simplify(gaussianSmooth(l, major.has(name) ? 1.6 : 2.2), 0.12);
       outR.push({ m: major.has(name) ? 1 : 0, p: flat(s, round1) });
       n += s.length;
     }

@@ -7,7 +7,7 @@ export const PALETTES = {
   day: {
     sea: '#a4d4e8', shallow: 'rgba(255,255,255,0.28)', foreign: '#dcdcd2', foreignLine: '#c4c5ba', north: '#d3d4c8',
     land: '#cfe3a6', terrain: ['#dde8ae', '#ece6a8', '#e8d396', '#d4b283'], coast: '#5f8fa3',
-    shadow: 'rgba(70,60,20,0.16)', border: 'rgba(84,92,70,0.42)', fog: 'rgba(235,236,226,0.72)',
+    shadow: 'rgba(70,60,20,0.16)', border: 'rgba(84,92,70,0.3)', fog: 'rgba(235,236,226,0.72)',
     river: '#7dbad8', lake: '#88c2de', label: '#3a4438', labelHalo: 'rgba(255,255,255,0.75)', seaLabel: '#4a8199',
     xCase: '#7a4a18', xFill: '#ffd76a', nCase: '#6b6f66', nFill: '#fffef6', rFill: '#f4efd8', closed: 'rgba(92,98,84,0.34)',
     asphalt: '#50575c', asphaltCase: '#2f3438', laneMark: 'rgba(255,255,255,0.85)', center: '#f6c02e',
@@ -270,9 +270,9 @@ export class Renderer {
     b.strokeStyle = pal.coast;
     b.lineWidth = 0.9 * px;
     b.stroke(P.land);
-    b.setLineDash([5 * px, 3.5 * px]);
+    b.setLineDash([7 * px, 5 * px]);
     b.strokeStyle = pal.border;
-    b.lineWidth = 1 * px;
+    b.lineWidth = 0.9 * px;
     for (const p of P.provinces) b.stroke(p.path);
     b.setLineDash([]);
 
