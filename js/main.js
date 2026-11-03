@@ -419,11 +419,13 @@ class App {
 
   loop(t) {
     requestAnimationFrame((q) => this.loop(q));
-    const dt = Math.min(0.1, (t - this.last) / 1000);
+    const realDt = Math.max(0, (t - this.last) / 1000);
+    const dt = Math.min(0.25, realDt);
     this.last = t;
     this.lastFrame = performance.now();
     this.settleAway();
-    this.advance(dt, 14);
+    // 프레임이 드물어도 게임 시간은 실제 시간을 따라간다
+    this.advance(Math.min(1, realDt), realDt > 0.1 ? 40 : 14);
     this.handleEvents();
     this.renderer.frame(dt);
     this.slowUpdates(dt);
