@@ -17,7 +17,10 @@ export const TOOLS = [
 ];
 
 const LIST_KINDS = [['all', '전체'], ['raw', '원료'], ['factory', '공장'], ['dest', '납품처']];
-const LIST_SORTS = [['region', '권역'], ['name', '이름'], ['trucks', '트럭'], ['income', '수익'], ['stock', '창고']];
+const LIST_SORTS = [['region', '권역'], ['state', '상태'], ['name', '이름'], ['trucks', '트럭'], ['income', '수익'], ['stock', '창고']];
+// 상태순으로 볼 때 위에서부터 놓는 순서. 급한 것이 먼저다
+const LIST_STATES = ['원료 없음', '트럭 없음', '트럭 부족', '화물 부족', '원활', '정상'];
+const slotName = (slot) => (slot.length === 1 ? GOODS[slot[0]].name : '농수산물');
 const CITY_STAGE_NAME = ['마을', '읍내', '소도시', '중도시', '대도시', '메가시티'];
 const CONTROL_NAME = { auto: '비보호 교차로', signal: '신호 교차로', roundabout: '회전교차로', interchange: '입체교차로' };
 const KIND_NAME = { x: '고속도로', n: '국도', r: '연결로', s: '진입로', f: '뱃길' };
@@ -555,6 +558,16 @@ export class UI {
   siteTruckCount(s) { return this.siteRoutes(s).reduce((sum, q) => sum + q.trucks.length, 0); }
   siteIncome(s) { return this.siteRoutes(s).reduce((sum, q) => sum + (q.rate || 0), 0) * 60; }
   siteStockFrac(s) { return s.produces ? s.stock / this.game.siteCap(s) : -1; }
+  // 상태순 목록에서 같은 상태끼리 줄 세우는 값과, 줄 오른쪽에 보일 글
+  stateMeasure(s) {
+    const st = this.siteStatus(s).short;
+    if (st === '원료 없음') return [s.yard.length, s.inputs.filter((slot, i) => s.inBuf[i] < 0.05).map(slotName).join('·')];
+    if (st === '트럭 없음') return [GOODS[s.goods].price, GOODS[s.goods].name];
+    if (st === '트럭 부족') return [this.siteStockFrac(s), `창고 ${Math.round(this.siteStockFrac(s) * 100)}%`];
+    if (st === '화물 부족') return [s.yard.length, `${s.yard.length}대 대기`];
+    const income = this.siteIncome(s);
+    return [income, income > 0 ? `${fmtWon(income)}/분` : ''];
+  }
 
   // 조건에 맞는 거점을 고르고 정렬한다
   listSites() {
@@ -570,6 +583,7 @@ export class UI {
       return `${s.name} ${g.regions[s.region].short} ${SITE_KIND_NAME[s.kind]} ${s.produces ? GOODS[s.goods].name : ''}`.includes(q);
     });
     const by = {
+      state: (a, b) => LIST_STATES.indexOf(this.siteStatus(a).short) - LIST_STATES.indexOf(this.siteStatus(b).short) || this.stateMeasure(b)[0] - this.stateMeasure(a)[0],
       name: (a, b) => a.name.localeCompare(b.name, 'ko'),
       trucks: (a, b) => this.siteTruckCount(b) - this.siteTruckCount(a),
       income: (a, b) => this.siteIncome(b) - this.siteIncome(a),
@@ -582,6 +596,7 @@ export class UI {
     const g = this.game, f = this.listView;
     const st = this.siteStatus(s);
     let right = st.tone !== 'ok' ? st.short : '';
+    if (f.sort === 'state') right = this.stateMeasure(s)[1];
     if (f.sort === 'trucks') right = `${this.siteTruckCount(s)}대`;
     if (f.sort === 'income') right = `${fmtWon(this.siteIncome(s))}/분`;
     if (f.sort === 'stock') right = s.produces ? `${Math.round(this.siteStockFrac(s) * 100)}%` : '';
@@ -669,12 +684,14 @@ export class UI {
     const now = performance.now();
     if (!this.listOrder || key !== this.listKey || (now - this.listT > 4000 && !this.el.insp.matches(':hover'))) {
       this.listOrder = this.listSites();
+      this.listStates = new Map(this.listOrder.map((s) => [s, this.siteStatus(s).short]));
+      this.listJams = filtering ? [] : g.jams.slice(0, 5);
       this.listKey = key;
       this.listT = now;
     }
     const sites = this.listOrder;
     const tools = this.listTools();
-    const jams = filtering ? [] : g.jams.slice(0, 5);
+    const jams = this.listJams;
     const body = [];
     if (!filtering) {
       const fleet = this.fleetSec();
@@ -688,6 +705,12 @@ export class UI {
     else if (f.sort === 'region') {
       const grouped = g.regions.filter((r) => r.unlocked).map((r) => ({ r, list: sites.filter((s) => s.region === r.index) })).filter((q) => q.list.length).reverse();
       for (const { r, list } of grouped) body.push(h('div', { class: 'sec', key: `reg${r.index}` }, h('h3', null, r.short, h('span', null, `${list.length}곳`)), list.map((s) => this.listRow(s))));
+    } else if (f.sort === 'state') {
+      // 순서를 정할 때의 상태로 묶어, 순서를 고정한 동안 줄이 다른 묶음으로 옮겨 가지 않게 한다
+      for (const name of LIST_STATES) {
+        const list = sites.filter((s) => this.listStates.get(s) === name);
+        if (list.length) body.push(h('div', { class: 'sec', key: `st${name}` }, h('h3', null, name, h('span', null, `${list.length}곳`)), list.map((s) => this.listRow(s))));
+      }
     } else {
       body.push(h('div', { class: 'sec', key: 'sorted' }, h('h3', null, `${LIST_SORTS.find((q) => q[0] === f.sort)[1]} 순서`, h('span', null, `${sites.length}곳`)), sites.map((s) => this.listRow(s))));
     }
@@ -763,7 +786,7 @@ export class UI {
     if (s.inputs) {
       s.inputs.forEach((slot, i) => {
         if (i > 0) chain.push(h('span', { class: 'sep', key: `p${i}` }, '+'));
-        chain.push(h('span', { class: 'goods', key: `in${i}` }, slot.map((q) => h('i', { key: q, style: `background:${GOODS[q].color}` })), slot.length === 1 ? GOODS[slot[0]].name : '농수산물'));
+        chain.push(h('span', { class: 'goods', key: `in${i}` }, slot.map((q) => h('i', { key: q, style: `background:${GOODS[q].color}` })), slotName(slot)));
       });
       chain.push(h('span', { class: 'sep', key: 'to' }, '→'));
     }
