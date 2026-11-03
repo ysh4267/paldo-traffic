@@ -12,7 +12,7 @@ export const TOOLS = [
   { id: 'signal', icon: 't_signal', color: '#2c9a58', name: '신호등', key: '4', tech: 'signal', desc: '방향별로 번갈아 보냅니다. 교통량이 많은 교차로의 처리량이 크게 늘어납니다.' },
   { id: 'roundabout', icon: 't_roundabout', color: '#3f7fb8', name: '회전교차로', key: '5', tech: 'roundabout', desc: '멈추지 않고 합류합니다. 교통량이 중간쯤인 곳에 좋습니다.' },
   { id: 'interchange', icon: 't_interchange', color: '#9a4fc4', name: '입체교차로', key: '6', tech: 'interchange', desc: '교차 흐름을 입체로 분리합니다. 같은 차로로 합류할 때만 양보합니다.' },
-  { id: 'lane', icon: 't_lane', color: '#e0752b', name: '차로 추가', key: '7', desc: '도로를 눌러 양방향으로 한 차로씩 늘립니다. 드래그하면 이어서 칠합니다.' },
+  { id: 'lane', icon: 't_lane', color: '#e0752b', name: '차로 추가', key: '7', desc: '도로를 눌러 양방향으로 한 차로씩 늘립니다. 끌어서 범위를 고르면 그 안의 도로를 한 번에 늘립니다. Shift를 누른 채 끌면 지나간 도로만 늘립니다.' },
   { id: 'remove', icon: 't_remove', color: '#8a857a', name: '원상복구', key: '8', desc: '교차로의 표지·신호를 없애 기본 상태로 돌립니다. 설치비는 돌려받지 못합니다.' },
 ];
 
@@ -34,6 +34,7 @@ export class UI {
       todo: document.getElementById('todo'),
       insp: document.getElementById('inspector'),
       hint: document.getElementById('toolhint'),
+      areabar: document.getElementById('areabar'),
       tip: document.getElementById('tooltip'),
       toasts: document.getElementById('toasts'),
       coach: document.getElementById('coach'),
@@ -42,6 +43,7 @@ export class UI {
     };
     this.sel = null;
     this.tool = 'select';
+    this.area = null;
     this.modelSel = 0;
     this.buyCount = 1;
     this.modalName = null;
@@ -87,10 +89,12 @@ export class UI {
       if (e.key === 'Escape') {
         if (this.modalName === 'welcome') return;
         if (this.modalName) this.closeModal();
+        else if (this.area) this.clearArea();
         else if (this.tool !== 'select') this.setTool('select');
         else if (this.listOpen) this.setList(false);
         else this.select(null);
       }
+      if (e.key === 'Enter' && this.area && this.area.pending && !this.modalName) { e.preventDefault(); this.applyArea(); }
       if (e.key === ' ') { e.preventDefault(); this.app.setSpeed(this.app.speed === 0 ? (this.app.lastSpeed || 1) : 0); }
       if (e.key === 'r' || e.key === 'R') this.openModal('research');
       if (e.key === 'b' || e.key === 'B') this.openModal('build');
@@ -150,6 +154,9 @@ export class UI {
   }
 
   setTool(id) {
+    this.area = null;
+    this.r.area = null;
+    this.renderAreaBar();
     this.tool = id;
     this.r.tool = id;
     this.r.hover = null;
@@ -224,7 +231,7 @@ export class UI {
     const def = TOOLS.find((q) => q.id === t);
     let text = '';
     if (!hit) {
-      const help = { yield: '교차로로 들어오는 방향을 누르세요', stop: '교차로로 들어오는 방향을 누르세요', signal: '교차로를 누르세요', roundabout: '교차로를 누르세요', interchange: '교차로를 누르세요', lane: '넓힐 도로를 누르세요', remove: '되돌릴 교차로를 누르세요' };
+      const help = { yield: '교차로로 들어오는 방향을 누르세요', stop: '교차로로 들어오는 방향을 누르세요', signal: '교차로를 누르세요', roundabout: '교차로를 누르세요', interchange: '교차로를 누르세요', lane: '도로를 누르거나, 끌어서 범위를 고르세요', remove: '되돌릴 교차로를 누르세요' };
       patch(el, [h('span', null, `${def.name}: ${help[t]}  ·  `, h('b', null, 'Esc'), ' 또는 ', h('b', null, '우클릭'), ' 취소')]);
       el.classList.add('show');
       return;
@@ -251,6 +258,91 @@ export class UI {
     el.classList.add('show');
   }
 
+  // ── 범위 차로 추가 ─────────────────────────────────
+  // 끄는 동안 사각형 안의 도로를 모아 미리 보여 준다. 막히는 도로가 앞에 온다
+  dragArea(x0, y0, x1, y1) {
+    const g = this.game;
+    const jam = (q) => Math.max(q.fwd.cong, q.bwd.cong);
+    const roads = this.r.roadsInBox(Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1))
+      .filter((q) => g.canAddLane(q))
+      .sort((p, q) => jam(q) - jam(p) || g.lanePrice(p) - g.lanePrice(q));
+    this.area = { x0, y0, x1, y1, roads, pick: new Set(), total: 0, pending: false, paths: new Map(), pathK: 0 };
+    this.r.area = this.area;
+    this.planArea();
+    this.renderAreaBar();
+    const a = this.area;
+    const count = a.pick.size < roads.length ? `도로 ${roads.length}개 중 ${a.pick.size}개 ` : `도로 ${roads.length}개 `;
+    patch(this.el.hint, [roads.length ? h('span', null, count, h('b', null, fmtWon(a.total))) : h('span', null, '범위 안에 넓힐 도로가 없습니다')]);
+    this.el.hint.classList.add('show');
+  }
+  // 돈이 모자라면 앞에서부터 살 수 있는 만큼만 고른다
+  planArea() {
+    const a = this.area, g = this.game;
+    let left = g.money;
+    a.pick.clear();
+    a.total = 0;
+    for (const q of a.roads) {
+      const c = g.lanePrice(q);
+      if (c > left) continue;
+      left -= c;
+      a.total += c;
+      a.pick.add(q);
+    }
+  }
+  finishArea() {
+    if (!this.area) return;
+    if (!this.area.roads.length) {
+      this.clearArea();
+      return;
+    }
+    this.area.pending = true;
+    this.el.hint.classList.remove('show');
+    this.renderAreaBar();
+  }
+  clearArea() {
+    this.area = null;
+    this.r.area = null;
+    this.renderAreaBar();
+    this.updateHint(null);
+  }
+  applyArea() {
+    const a = this.area, g = this.game;
+    if (!a) return;
+    let n = 0, paid = 0;
+    for (const q of a.pick) {
+      const c = g.lanePrice(q);
+      if (g.addLane(q)) {
+        n++;
+        paid += c;
+      }
+    }
+    this.clearArea();
+    if (!n) {
+      this.sound.deny();
+      return;
+    }
+    this.sound.place();
+    this.r.baseDirty = true;
+    this.r.ping((a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2);
+    this.toast('t_lane', `도로 ${n}개를 넓혔습니다`, fmtWon(paid));
+    this.renderInspector(true);
+    this.renderTop();
+  }
+  renderAreaBar() {
+    const el = this.el.areabar, a = this.area;
+    if (!a || !a.pending) {
+      el.classList.remove('show');
+      return;
+    }
+    const n = a.pick.size, all = a.roads.length;
+    patch(el, [
+      h('span', { key: 'text' }, n < all ? `도로 ${all}개 중 ${n}개` : `도로 ${n}개`, n < all && h('small', null, ' 자금 부족')),
+      h('button', { key: 'ok', class: 'btn buy', disabled: !n, onclick: () => this.applyArea() }, '차로 추가', h('span', { class: 'price' }, fmtWon(a.total))),
+      h('button', { key: 'no', class: 'btn', onclick: () => { this.sound.click(); this.clearArea(); } }, '취소'),
+    ]);
+    el.classList.add('show');
+  }
+
   // ── 렌더 ───────────────────────────────────────────
   renderAll() {
     this.renderTop();
@@ -264,6 +356,10 @@ export class UI {
     this.renderGoal();
     this.renderInspector();
     this.renderCoach();
+    if (this.area && this.area.pending) {
+      this.planArea();
+      this.renderAreaBar();
+    }
     if (this.modalName && this.modalName !== 'welcome' && this.modalName !== 'offline' && this.modalName !== 'settings') this.renderModal();
   }
 
@@ -928,7 +1024,7 @@ export class UI {
             ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, '정말 처음부터'))
             : h('button', { class: 'btn danger', onclick: () => { this.confirmReset = true; this.renderModal(); } }, '처음부터 다시 시작')),
         h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
-          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · M: 배경음 · Esc 또는 우클릭: 취소')),
+          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 차로 도구로 끌기: 범위 넓히기 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · M: 배경음 · Esc 또는 우클릭: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
           h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다. 화면 디자인은 Dinosaur Polo Club의 Mini Metro를 참고했습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth. 그림은 모두 코드로 그린 벡터입니다.', h('br'), `배경음: ${MUSIC_TRACKS.map((q) => `${q.artist}, ${q.title}`).join(' · ')} (모두 CC0, OpenGameArt). 효과음은 코드로 합성했습니다.`, h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
   }

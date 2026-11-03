@@ -203,7 +203,12 @@ class App {
       this.sound.unlock();
       c.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, button: e.button, type: e.pointerType });
-      if (this.pointers.size === 2) this.pinch = null;
+      if (this.pointers.size === 2) {
+        this.pinch = null;
+        // 두 손가락이 되면 범위 고르기를 그만두고 지도를 움직인다
+        for (const q of this.pointers.values()) q.boxing = false;
+        if (this.ui.area && !this.ui.area.pending) this.ui.clearArea();
+      }
       this.painted = new Set();
     });
     c.addEventListener('pointermove', (e) => {
@@ -225,11 +230,21 @@ class App {
       }
       if (!p.moved) return;
       const tool = this.ui.tool;
-      // 차로 도구는 드래그로 칠한다 (오른쪽 버튼은 언제나 지도 이동)
-      if (tool === 'lane' && p.button === 0 && p.type === 'mouse') {
-        const hit = this.renderer.pick(e.clientX, e.clientY, tool);
-        if (hit && hit.road && !this.painted.has(hit.road)) { this.painted.add(hit.road); this.ui.applyAt(hit); }
-        this.renderer.hover = hit;
+      // 차로 도구는 끌어서 범위를 고른다. Shift를 누르면 지나간 도로만 칠한다 (오른쪽 버튼은 언제나 지도 이동)
+      if (tool === 'lane' && p.button === 0) {
+        if (e.shiftKey && p.type === 'mouse' && !p.boxing) {
+          const hit = this.renderer.pick(e.clientX, e.clientY, tool);
+          if (hit && hit.road && !this.painted.has(hit.road)) { this.painted.add(hit.road); this.ui.applyAt(hit); }
+          this.renderer.hover = hit;
+          return;
+        }
+        if (!p.boxing) {
+          p.boxing = true;
+          p.wx = cam().wx(p.sx);
+          p.wy = cam().wy(p.sy);
+        }
+        this.renderer.hover = null;
+        this.ui.dragArea(p.wx, p.wy, cam().wx(e.clientX), cam().wy(e.clientY));
         return;
       }
       c.classList.add('dragging');
@@ -240,17 +255,32 @@ class App {
       if (!p) return;
       this.pointers.delete(e.pointerId);
       c.classList.remove('dragging');
+      if (p.boxing) {
+        this.ui.finishArea();
+        return;
+      }
       if (this.pointers.size === 0 && !p.moved && p.button === 0) {
+        // 범위를 골라 둔 채 누르면 범위만 풀린다
+        if (this.ui.area) {
+          this.ui.clearArea();
+          return;
+        }
         const hit = this.renderer.pick(e.clientX, e.clientY, this.ui.tool);
         if (!this.painted.size) this.ui.applyAt(hit);
       } else if (this.pointers.size === 0 && !p.moved && p.button === 2 && this.ui.tool !== 'select') {
-        // 우클릭은 설치 취소. 끌면 지도 이동이다
+        // 우클릭은 범위를 먼저 풀고, 그다음 설치를 취소한다. 끌면 지도 이동이다
         this.sound.click();
-        this.ui.setTool('select');
+        if (this.ui.area) this.ui.clearArea();
+        else this.ui.setTool('select');
       }
     };
     c.addEventListener('pointerup', end);
-    c.addEventListener('pointercancel', (e) => { this.pointers.delete(e.pointerId); c.classList.remove('dragging'); });
+    c.addEventListener('pointercancel', (e) => {
+      const p = this.pointers.get(e.pointerId);
+      if (p && p.boxing) this.ui.clearArea();
+      this.pointers.delete(e.pointerId);
+      c.classList.remove('dragging');
+    });
     c.addEventListener('pointerleave', () => { this.renderer.hover = null; });
 
     // 패널에서 누르는 동안 갱신을 멈춰 클릭을 보호한다
@@ -285,8 +315,8 @@ class App {
   onHover(x, y) {
     const r = this.renderer, ui = this.ui;
     const hit = r.pick(x, y, ui.tool);
-    r.hover = hit;
-    if (ui.tool !== 'select') ui.updateHint(hit);
+    r.hover = ui.area ? null : hit;
+    if (ui.tool !== 'select' && !ui.area) ui.updateHint(hit);
     this.canvas.style.cursor = hit && ui.tool === 'select' ? 'pointer' : '';
   }
 

@@ -120,6 +120,9 @@ svg { display: block; width: 100%; height: 100%; }
 #toolhint { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 5px 11px; border-radius: 2px; font-weight: 600; font-size: 13px; display: none; white-space: nowrap; max-width: calc(100vw - 16px); overflow: hidden; text-overflow: ellipsis; }
 #toolhint.show { display: block; animation: risein .18s var(--ease); }
 #toolhint b { font-weight: 800; }
+#areabar { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); display: none; align-items: center; gap: 8px; background: var(--card); color: var(--ink); padding: 6px 6px 6px 12px; border-radius: 3px; font-weight: 600; font-size: 13px; white-space: nowrap; max-width: calc(100vw - 16px); box-shadow: 0 1px 2px rgba(60, 50, 30, .1), 0 8px 24px rgba(60, 50, 30, .12); }
+#areabar.show { display: flex; animation: risein .18s var(--ease); }
+#areabar small { color: var(--muted); font-size: 12px; font-weight: 500; }
 
 /* ── 정보 카드 ───────────────────────── */
 #inspector { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(max(12px, env(safe-area-inset-top, 0px)) + 42px); max-height: calc(100vh - 112px); width: 304px; display: flex; flex-direction: column; background: var(--card); border-radius: 3px; box-shadow: 0 1px 2px rgba(60, 50, 30, .1), 0 8px 24px rgba(60, 50, 30, .12); overflow: hidden; }
@@ -429,6 +432,7 @@ button:active:not(:disabled) { transform: scale(.94); }
   #inspector:not([hidden]) ~ #toasts { display: none; }
   #coach { left: 8px; right: 8px; width: auto; bottom: auto; top: calc(max(8px, env(safe-area-inset-top, 0px)) + 84px); }
   #toolhint { bottom: 96px; white-space: normal; text-align: center; width: max-content; }
+  #areabar { bottom: 96px; white-space: normal; flex-wrap: wrap; justify-content: center; width: max-content; }
   .banner-sign b { font-size: 36px; }
   .welcome h1 { font-size: 44px; }
   .row { grid-template-columns: 30px 1fr auto; gap: 9px; }
@@ -442,7 +446,7 @@ button:active:not(:disabled) { transform: scale(.94); }
 /* 움직임 줄이기 설정에서도 마우스 반응은 살려 두고, 크게 움직이는 것만 페이드로 바꾼다 */
 @media (prefers-reduced-motion: reduce) {
   #banner.show { animation-name: bannerfade; }
-  .dialog, .welcome, #inspector, .p-body, .stats, .coach-card, .todo, #toolhint.show { animation-name: fadein; }
+  .dialog, .welcome, #inspector, .p-body, .stats, .coach-card, .todo, #toolhint.show, #areabar.show { animation-name: fadein; }
   #inspector.out { animation-name: fadeout; }
   #modal.closing > * { animation-name: fadeout; }
 }

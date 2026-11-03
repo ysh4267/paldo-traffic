@@ -80,6 +80,27 @@ function trimLine(pts, len, a, b) {
   }
   return out;
 }
+// 선분이 사각형 안에 들어오는 길이
+function clippedLength(ax, ay, bx, by, x0, y0, x1, y1) {
+  const dx = bx - ax, dy = by - ay;
+  const p = [-dx, dx, -dy, dy], q = [ax - x0, x1 - ax, ay - y0, y1 - ay];
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return 0;
+      continue;
+    }
+    const t = q[i] / p[i];
+    if (p[i] < 0) {
+      if (t > t1) return 0;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return 0;
+      if (t < t1) t1 = t;
+    }
+  }
+  return Math.hypot(dx, dy) * (t1 - t0);
+}
 function shapePath(ctx, shape, x, y, r) {
   ctx.beginPath();
   if (shape === 'circle') { ctx.arc(x, y, r, 0, Math.PI * 2); return; }
@@ -173,6 +194,7 @@ export class Renderer {
     this.selection = null;  // { type, ... }
     this.hover = null;
     this.highlightRoutes = null;
+    this.area = null;       // 끌어서 고른 범위
     this.tool = 'select';
     this.toolColor = ACCENT;
     this.time = 0;
@@ -740,6 +762,7 @@ export class Renderer {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawHoverAndSelection(ctx);
+    this.drawArea(ctx);
     this.drawSites(ctx);
     this.drawPings(ctx, dt);
     this.drawFloats(ctx);
@@ -1335,9 +1358,10 @@ export class Renderer {
   // 교차로를 고를 때 두르는 고리의 반지름 (화면 픽셀)
   nodeRing(n) { return Math.max(n.R / this.cam.k + 5, 11); }
   // 도로 강조는 양 끝 교차로의 고리 바깥에서 둥글게 끝낸다. 교차로와 도로가 서로 겹치면 어디까지가 도로인지 알아보기 힘들다
-  roadMarkPath(r, w) {
+  // tight: 고리를 그리지 않을 때는 교차로 테두리에서 바로 끝낸다
+  roadMarkPath(r, w, tight = false) {
     const nodes = this.game.net.nodes, k = this.cam.k;
-    const cut = (n) => (n.terminal || n.inE.length < 2 ? 0 : (this.nodeRing(n) + 4) * k + w / 2);
+    const cut = (n) => (n.terminal || n.inE.length < 2 ? 0 : (tight ? n.R : (this.nodeRing(n) + 4) * k) + w / 2);
     const pts = trimLine(r.pts, r.len, cut(nodes[r.a]), cut(nodes[r.b]));
     const p = new Path2D();
     if (pts.length >= 4) linePath(p, pts);
@@ -1386,6 +1410,42 @@ export class Renderer {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+  // 범위 차로 추가: 고른 도로를 칠하고 사각형을 그린다. 돈이 모자라 빠지는 도로는 흐리게
+  drawArea(ctx) {
+    const a = this.area;
+    if (!a) return;
+    const cam = this.cam, k = cam.k, dpr = this.dpr;
+    if (a.pathK !== k) {
+      a.paths.clear();
+      a.pathK = k;
+    }
+    const s = dpr / k;
+    ctx.setTransform(s, 0, 0, s, (cam.W / 2) * dpr - cam.cx * s, (cam.H / 2) * dpr - cam.cy * s);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = this.toolColor;
+    for (const r of a.roads) {
+      const w = Math.max(2 * (MEDIAN + LANE_W * r.lanes) + 2 * k, 5 * k);
+      let p = a.paths.get(r);
+      if (!p) {
+        p = this.roadMarkPath(r, w, true);
+        a.paths.set(r, p);
+      }
+      ctx.globalAlpha = a.pick.has(r) ? 0.8 : 0.22;
+      ctx.lineWidth = w;
+      ctx.stroke(p);
+    }
+    ctx.globalAlpha = 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const x = cam.sx(Math.min(a.x0, a.x1)), y = cam.sy(Math.min(a.y0, a.y1));
+    const bw = Math.abs(a.x1 - a.x0) / k, bh = Math.abs(a.y1 - a.y0) / k;
+    ctx.fillStyle = 'rgba(63, 127, 184, 0.1)';
+    ctx.fillRect(x, y, bw, bh);
+    ctx.strokeStyle = this.toolColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x, y, bw, bh);
+    ctx.setLineDash([]);
   }
   drawHoverAndSelection(ctx) {
     const dt = this.lastDt;
@@ -1680,6 +1740,20 @@ export class Renderer {
       }
     }
     return null;
+  }
+
+  // 사각형 안에 길이의 절반 이상이 들어오는 도로. 끝만 걸친 긴 도로까지 넓히지 않는다
+  roadsInBox(x0, y0, x1, y1) {
+    const out = [];
+    for (const r of this.game.net.roads) {
+      if (!r.open || r.kind === 'f') continue;
+      if (r.bb[2] < x0 || r.bb[0] > x1 || r.bb[3] < y0 || r.bb[1] > y1) continue;
+      const p = r.pts;
+      let inside = 0;
+      for (let i = 0; i + 3 < p.length; i += 2) inside += clippedLength(p[i], p[i + 1], p[i + 2], p[i + 3], x0, y0, x1, y1);
+      if (inside >= r.len * 0.5) out.push(r);
+    }
+    return out;
   }
 
   nearestApproach(node, wx, wy) {
