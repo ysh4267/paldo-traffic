@@ -553,11 +553,20 @@ export class Renderer {
     label('독도', data.dokdo.x, data.dokdo.y, `700 ${12 * dpr}px ${FONT}`, -11);
     label('울릉도', data.ulleung.x, data.ulleung.y, `600 ${11 * dpr}px ${FONT}`, -11);
 
+    // 지명: 축척에 따라 단계별로
+    const boxes = [];
+    const taken = (x0, y0, x1, y1) => {
+      for (const q of boxes) if (x0 < q[2] && x1 > q[0] && y0 < q[3] && y1 > q[1]) return true;
+      return false;
+    };
+
     // 아직 열리지 않은 권역 이름
     if (this.lockedLabels) {
       for (const reg of game.regions) {
         if (reg.unlocked || !this.P.regionCenter[reg.index]) continue;
         const c = this.P.regionCenter[reg.index];
+        const lw = (reg.short.length + 5) * 14 * dpr, lh = 20 * dpr;
+        boxes.push([toX(c[0]) - lw / 2, toY(c[1]) - lh / 2, toX(c[0]) + lw / 2, toY(c[1]) + lh / 2]);
         b.font = `800 ${14 * dpr}px ${FONT}`;
         b.lineWidth = 3 * dpr;
         b.strokeStyle = pal.labelHalo;
@@ -570,12 +579,6 @@ export class Renderer {
       }
     }
 
-    // 지명: 축척에 따라 단계별로
-    const boxes = [];
-    const taken = (x0, y0, x1, y1) => {
-      for (const q of boxes) if (x0 < q[2] && x1 > q[0] && y0 < q[3] && y1 > q[1]) return true;
-      return false;
-    };
     const siteNames = new Set(game.sites.filter((q) => q.available && q.isCity).map((q) => q.name));
     const maxRank = k > 0.75 ? 0 : k > 0.3 ? 1 : 2;
     const list = data.labels.filter((l) => l.rank <= maxRank && !siteNames.has(l.n)).sort((p, q) => p.rank - q.rank);

@@ -3,7 +3,7 @@ import { Game } from './game/game.js';
 import { Renderer } from './render/renderer.js';
 import { UI } from './ui/ui.js';
 import { Sound } from './ui/audio.js';
-import { josa } from './game/defs.js';
+import { josa, fmtWon, fmtTime } from './game/defs.js';
 import { iconHtml } from './render/art.js';
 
 const SAVE_KEY = 'paldo-traffic-save-v1';
@@ -31,6 +31,8 @@ class App {
     this.lastFrame = 0;
     this.lastBg = performance.now();
     this.awayBank = 0;
+    this.isAway = false;
+    this.awayEl = document.getElementById('away');
     this.pointers = new Map();
     this.canvas = document.getElementById('map');
     this.mini = document.getElementById('minimap');
@@ -418,6 +420,7 @@ class App {
     this.handleEvents();
     this.renderer.frame(dt);
     this.slowUpdates(dt);
+    if (this.isAway) this.setAway(false);
     requestAnimationFrame((q) => this.loop(q));
   }
 
@@ -427,11 +430,32 @@ class App {
     const gap = (now - this.lastBg) / 1000;
     this.lastBg = now;
     if (now - this.lastFrame < 500) return;
+    if (this.lastFrame > 0 && now - this.lastFrame > 700) this.setAway(true);
     const sim = Math.min(gap, 5);
     this.advance(sim, 120);
     if (gap > sim && this.started) this.awayBank += gap - sim;
     this.handleEvents();
     this.slowUpdates(sim);
+  }
+
+  // 화면이 멈춘 사이 트럭이 움직였으므로 블러로 덮고, 돌아오면 최신 화면 위에서 걷어 낸다
+  setAway(on) {
+    if (this.noAwayFx || on === this.isAway || !this.started) return;
+    this.isAway = on;
+    if (on) {
+      this.awayEl.classList.add('on');
+      this.awayFrom = { t: Date.now(), earned: this.game.totalEarned };
+      return;
+    }
+    // 새로 그린 프레임이 화면에 올라간 뒤에 걷어 낸다
+    requestAnimationFrame(() => requestAnimationFrame(() => this.awayEl.classList.remove('on')));
+    const from = this.awayFrom;
+    if (!from) return;
+    const seconds = (Date.now() - from.t) / 1000;
+    const earned = this.game.totalEarned - from.earned;
+    if (seconds >= 10 && earned > 0 && !this.ui.modalName) {
+      this.ui.toast('won', `자리 비운 ${fmtTime(seconds)} 동안 ${fmtWon(earned)}`, '트럭은 계속 달리고 있었습니다');
+    }
   }
 
   // 브라우저가 타이머까지 늦춰 못 돌린 시간은 오프라인 수익으로 정산한다
@@ -444,6 +468,7 @@ class App {
 
   onVisibility() {
     if (document.hidden) {
+      this.setAway(true);
       this.save();
     } else {
       this.last = performance.now();
