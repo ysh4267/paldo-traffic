@@ -607,6 +607,7 @@ export class Renderer {
     const t0 = performance.now();
     this.time += dt;
     const cam = this.cam;
+    if (!this.canvas.width || !this.canvas.height || !this.base.width || !this.base.height) return;
     cam.update(dt);
     const ctx = this.ctx, dpr = this.dpr;
     const view = this.baseView;

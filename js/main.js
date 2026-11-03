@@ -132,8 +132,13 @@ class App {
   // ── 화면 ───────────────────────────────────────────
   onResize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const wasHidden = this.renderer.cam.W < 2 || this.renderer.cam.H < 2;
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     this.applyCameraPadding();
+    if (wasHidden && window.innerWidth >= 2 && window.innerHeight >= 2) {
+      if (this.started) this.fitToStage(0);
+      else this.fitBoxAll(0);
+    }
   }
 
   applyCameraPadding() {
@@ -412,6 +417,7 @@ class App {
   }
 
   loop(t) {
+    requestAnimationFrame((q) => this.loop(q));
     const dt = Math.min(0.1, (t - this.last) / 1000);
     this.last = t;
     this.lastFrame = performance.now();
@@ -421,7 +427,6 @@ class App {
     this.renderer.frame(dt);
     this.slowUpdates(dt);
     if (this.isAway) this.setAway(false);
-    requestAnimationFrame((q) => this.loop(q));
   }
 
   // 창이 가려져 화면 갱신이 멈춰도 트럭은 계속 달린다
