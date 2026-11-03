@@ -162,6 +162,26 @@ export class Renderer {
       for (const r of t.rings) ringPath(path, r);
       return path;
     });
+    // 권역별 대표 위치: 가장 큰 고리의 무게중심
+    P.regionCenter = {};
+    const bestArea = {};
+    for (const p of data.provinces) {
+      for (const r of p.rings) {
+        let a = 0, cx = 0, cy = 0;
+        for (let i = 0, n = r.length / 2; i < n; i++) {
+          const j = (i + 1) % n;
+          const f = r[i * 2] * r[j * 2 + 1] - r[j * 2] * r[i * 2 + 1];
+          a += f;
+          cx += (r[i * 2] + r[j * 2]) * f;
+          cy += (r[i * 2 + 1] + r[j * 2 + 1]) * f;
+        }
+        const area = Math.abs(a / 2);
+        if (a !== 0 && area > (bestArea[p.r] || 0)) {
+          bestArea[p.r] = area;
+          P.regionCenter[p.r] = [cx / (3 * a), cy / (3 * a)];
+        }
+      }
+    }
     P.lakes = new Path2D();
     for (const l of data.lakes) ringPath(P.lakes, l);
     P.riverMajor = new Path2D();
@@ -262,6 +282,7 @@ export class Renderer {
 
     // 독도·울릉도는 어떤 축척에서도 보이게
     this.drawDokdo(b, px);
+    this.lockedLabels = k > 0.32;
 
     this.drawGround(b, k);
     this.drawRoadsOnBase(b, px, k);
@@ -534,6 +555,23 @@ export class Renderer {
     };
     label('독도', data.dokdo.x, data.dokdo.y, `700 ${12 * dpr}px ${FONT}`, -11);
     label('울릉도', data.ulleung.x, data.ulleung.y, `600 ${11 * dpr}px ${FONT}`, -11);
+
+    // 아직 열리지 않은 권역 이름
+    if (this.lockedLabels) {
+      for (const reg of game.regions) {
+        if (reg.unlocked || !this.P.regionCenter[reg.index]) continue;
+        const c = this.P.regionCenter[reg.index];
+        b.font = `800 ${14 * dpr}px ${FONT}`;
+        b.lineWidth = 3 * dpr;
+        b.strokeStyle = pal.labelHalo;
+        b.fillStyle = pal.label;
+        b.globalAlpha = 0.72;
+        const text = `${reg.short} (잠김)`;
+        b.strokeText(text, toX(c[0]), toY(c[1]));
+        b.fillText(text, toX(c[0]), toY(c[1]));
+        b.globalAlpha = 1;
+      }
+    }
 
     // 지명: 축척에 따라 단계별로
     const boxes = [];

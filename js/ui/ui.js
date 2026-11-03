@@ -83,6 +83,7 @@ export class UI {
       const t = TOOLS.find((q) => q.key === e.key);
       if (t) { this.pickTool(t); return; }
       if (e.key === 'Escape') {
+        if (this.modalName === 'welcome') return;
         if (this.modalName) this.closeModal();
         else if (this.tool !== 'select') this.setTool('select');
         else this.select(null);
@@ -420,8 +421,8 @@ export class UI {
     const body = [];
     if (s.produces) body.push(...this.productionSec(s));
     if (s.isCity || s.kind === 'port') body.push(...this.consumerSec(s));
-    if (s.inputs && !s.isCity) body.push(...this.factoryIncoming(s));
     if (s.produces) body.push(...this.routesSec(s));
+    if (s.inputs && !s.isCity) body.push(...this.factoryIncoming(s));
     body.push(this.baySec(s));
     return [head, h('div', { class: 'p-body', key: `body-${s.id}` }, body)];
   }
@@ -759,6 +760,8 @@ export class UI {
           this.confirmReset
             ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, '정말 처음부터'))
             : h('button', { class: 'btn danger', onclick: () => { this.confirmReset = true; this.renderModal(); } }, '처음부터 다시 시작')),
+        h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
+          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · Esc: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
           h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth, 지형 Terrain Tiles. 그림은 모두 코드로 그린 벡터입니다.'))));
   }

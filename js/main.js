@@ -4,6 +4,7 @@ import { Renderer } from './render/renderer.js';
 import { UI } from './ui/ui.js';
 import { Sound } from './ui/audio.js';
 import { fmtWon } from './game/defs.js';
+import { iconHtml } from './render/art.js';
 
 const SAVE_KEY = 'paldo-traffic-save-v1';
 const SETTINGS_KEY = 'paldo-traffic-settings';
@@ -241,6 +242,17 @@ class App {
     insp.addEventListener('pointerdown', () => { this.ui.pressing = true; });
     window.addEventListener('pointerup', () => { this.ui.pressing = false; });
     document.getElementById('ui').addEventListener('pointerdown', () => this.sound.unlock());
+
+    // 확대 버튼
+    const zoomBtn = (id, icon, fn) => {
+      const b = document.getElementById(id);
+      b.innerHTML = iconHtml(icon);
+      b.onclick = () => { this.sound.click(); fn(); };
+    };
+    const center = () => [window.innerWidth / 2 - 140, window.innerHeight / 2];
+    zoomBtn('z-in', 'plus', () => { const [x, y] = center(); cam().zoomAt(x, y, 0.72); });
+    zoomBtn('z-out', 'minus', () => { const [x, y] = center(); cam().zoomAt(x, y, 1.38); });
+    zoomBtn('z-all', 'home', () => this.fitToStage(0.7));
 
     // 미니맵
     const jump = (e) => {
