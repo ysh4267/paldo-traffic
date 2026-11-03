@@ -31,7 +31,7 @@ export const SITES = [
   C('c_jecheon', '제천', 'cb', 37.133, 128.191, 13),
   P('p_chungju_apple', '충주 사과밭', 'cb', 'orchard', 37.05, 127.84, 'fruit'),
   P('p_goesan_corn', '괴산 옥수수밭', 'cb', 'field', 36.78, 127.80, 'grain'),
-  P('p_yeongdong_grape', '영동 포도밭', 'cb', 'orchard', 36.18, 127.80, 'fruit'),
+  P('p_yeongdong_grape', '영동 포도밭', 'cb', 'orchard', 36.18, 127.80, 'fruit', { stage: 1 }),
   P('p_danyang_lime', '단양 석회석 광산', 'cb', 'quarry', 37.03, 128.40, 'stone'),
   F('f_eumseong_food', '음성 식품공장', 'cb', 'foodplant', 36.93, 127.68, 'food', FOOD_IN),
   F('f_danyang_cement', '단양 시멘트공장', 'cb', 'cementplant', 36.97, 128.32, 'cement', [['stone']]),

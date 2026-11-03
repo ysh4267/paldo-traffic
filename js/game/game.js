@@ -479,6 +479,7 @@ export class Game {
   // ── 노선 ──────────────────────────────────────────────
   refreshRoutes() {
     const avail = this.sites.filter((s) => s.available);
+    const trees = new Map();
     for (const p of avail) {
       if (!p.produces || !p.spurOut) continue;
       const tree = shortestTree(this.net, p.spurOut);
@@ -490,10 +491,26 @@ export class Game {
         cands.push({ c, path, km: pathLength(path), cost: tree.cost[c.spurIn.id] });
       }
       cands.sort((a, b) => a.km - b.km);
-      const keep = cands.slice(0, 3);
-      const far = cands.slice(3).filter((q) => q.km > (keep[0]?.km || 0) * 2);
-      if (far.length) keep.push(far[Math.floor(far.length * 0.6)]);
+      // 원료로 쓰는 공장과 최종 소비처를 고르게 잇고, 먼 곳도 하나 남겨 둔다
+      const facts = cands.filter((q) => q.c.inputs && q.c.accepts.has(p.goods));
+      const ends = cands.filter((q) => !q.c.inputs);
+      const keep = [...facts.slice(0, 2), ...ends.slice(0, 2)];
+      if (!keep.length) keep.push(...cands.slice(0, 2));
+      const nearest = keep.reduce((m, q) => Math.min(m, q.km), Infinity);
+      const far = cands.filter((q) => !keep.includes(q) && q.km > nearest * 2 && q.km < nearest + 320);
+      if (far.length) keep.push(far[Math.floor(far.length * 0.55)]);
       for (const q of keep) this.ensureRoute(p, q.c);
+      trees.set(p, { tree, cands });
+    }
+    // 아무도 찾아오지 않는 거점은 가장 가까운 생산지와 이어 준다
+    for (const c of avail) {
+      if (!c.spurIn || c.routesIn.some((r) => r.valid !== false)) continue;
+      let best = null;
+      for (const [p, { cands }] of trees) {
+        const q = cands.find((x) => x.c === c);
+        if (q && (!best || q.km < best.km)) best = { p, km: q.km };
+      }
+      if (best) this.ensureRoute(best.p, c);
     }
     this.recomputePaths();
   }
