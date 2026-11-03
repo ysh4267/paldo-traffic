@@ -2,7 +2,7 @@
 // 사용법: node tools/build-map.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { project, dist, polyLength, simplify, simplifyRing, chaikin, chaikinRing, ringArea, pointInRing, nearestOnPolyline, clipRingToBox, flat, round1, round2, unproject } from './lib/geo.mjs';
+import { project, dist, polyLength, simplify, simplifyRing, chaikin, chaikinRing, gaussianSmooth, ringArea, pointInRing, nearestOnPolyline, clipRingToBox, flat, round1, round2, unproject } from './lib/geo.mjs';
 import { Grid, extractGraph, RoadGraph } from './lib/skeleton.mjs';
 import { decodePng } from './lib/png.mjs';
 import { REGIONS, SITES, FERRIES, PROJECTS, SEA_LABELS } from './sites-data.mjs';
@@ -790,9 +790,10 @@ for (const s of SITES) {
 }
 log('sites', siteOut.length, 'far spurs', farSpurs);
 
-// 곡선 다듬기 (거점 지선·뱃길 제외)
+// 곡선 다듬기: 산길의 잔굴곡을 지우고 큰 흐름만 남긴다 (거점 지선·뱃길 제외)
+const SMOOTH_SIGMA = { x: 2.6, n: 3.6 };
 for (const e of g.edges.values()) {
-  if (e.kind === 'x' || e.kind === 'n') e.pts = simplify(chaikin(simplify(e.pts, 0.22), 2), 0.05);
+  if (e.kind === 'x' || e.kind === 'n') e.pts = simplify(gaussianSmooth(e.pts, SMOOTH_SIGMA[e.kind]), 0.07);
   e.len = polyLength(e.pts);
 }
 // 스플라이싱 후 양끝이 노드 좌표와 어긋나지 않게 고정

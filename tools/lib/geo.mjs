@@ -84,6 +84,64 @@ export function chaikin(pts, iter = 1) {
   return cur;
 }
 
+// 호 길이 기준으로 일정 간격 재표본화
+export function resample(pts, step) {
+  const L = polyLength(pts);
+  const n = Math.max(2, Math.ceil(L / step));
+  const ds = L / n;
+  const out = [pts[0].slice()];
+  let seg = 0, acc = 0;
+  for (let i = 1; i < n; i++) {
+    const target = i * ds;
+    while (seg < pts.length - 2 && acc + dist(pts[seg], pts[seg + 1]) < target) {
+      acc += dist(pts[seg], pts[seg + 1]);
+      seg++;
+    }
+    const l = dist(pts[seg], pts[seg + 1]) || 1;
+    const t = Math.min(1, (target - acc) / l);
+    out.push([pts[seg][0] + (pts[seg + 1][0] - pts[seg][0]) * t, pts[seg][1] + (pts[seg + 1][1] - pts[seg][1]) * t]);
+  }
+  out.push(pts[pts.length - 1].slice());
+  return { pts: out, ds };
+}
+
+// 가우시안 평활: 양 끝점은 고정하고, 파장이 짧은 굴곡만 지운다
+export function gaussianSmooth(pts, sigmaKm, step = 0.4) {
+  const L = polyLength(pts);
+  if (L < 1) return pts;
+  const sigma = Math.min(sigmaKm, L / 4.5);
+  const { pts: rs, ds } = resample(pts, step);
+  const n = rs.length;
+  const radius = Math.max(1, Math.round((sigma * 3) / ds));
+  const w = [];
+  let sum = 0;
+  for (let k = -radius; k <= radius; k++) {
+    const v = Math.exp(-((k * ds) ** 2) / (2 * sigma * sigma));
+    w.push(v);
+    sum += v;
+  }
+  // 끝점 기준 점대칭으로 연장하면 끝점과 접선이 유지된다
+  const at = (i) => {
+    if (i < 0) return [2 * rs[0][0] - rs[-i][0], 2 * rs[0][1] - rs[-i][1]];
+    if (i >= n) { const j = 2 * (n - 1) - i; return [2 * rs[n - 1][0] - rs[j][0], 2 * rs[n - 1][1] - rs[j][1]]; }
+    return rs[i];
+  };
+  const out = [rs[0].slice()];
+  for (let i = 1; i < n - 1; i++) {
+    let x = 0, y = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const ii = Math.max(-(n - 1), Math.min(2 * (n - 1), i + k));
+      const q = at(ii);
+      const v = w[k + radius];
+      x += q[0] * v;
+      y += q[1] * v;
+    }
+    out.push([x / sum, y / sum]);
+  }
+  out.push(rs[n - 1].slice());
+  return out;
+}
+
 export function chaikinRing(ring, iter = 1) {
   let cur = ring;
   for (let it = 0; it < iter; it++) {
