@@ -290,7 +290,7 @@ export class Network {
         const p = dirs[i], q = dirs[(i + 1) % dirs.length];
         let da = q.a - p.a;
         if (da <= 0) da += Math.PI * 2;
-        if (da < 2.2) R = Math.max(R, Math.min(2.8, ((p.w + q.w) / 2) / (2 * Math.sin(da / 2))));
+        if (da < 2.2) R = Math.max(R, Math.min(2.1, ((p.w + q.w) / 2) / (2 * Math.sin(da / 2))));
       }
       if (n.control === 'roundabout') R = Math.max(R, this.ringRadius(n) + 1.15);
       n.R = R;

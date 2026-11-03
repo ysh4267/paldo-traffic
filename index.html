@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>팔도 트래픽</title>
+<meta name="description" content="대한민국 실제 도로망 위에서 트럭을 굴리고, 신호등과 차로로 정체를 풀며 전국 물류망을 완성하는 인크리멘탈 웹게임">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 38'%3E%3Cpath d='M3 3c5 2 10 2 15 0 5 2 10 2 15 0 2 12 1 26-15 33C2 29 1 15 3 3z' fill='%230b4ea2'/%3E%3Cpath d='M3 3c5 2 10 2 15 0 5 2 10 2 15 0l.8 8H2.200z' fill='%23d9352b'/%3E%3Ctext x='18' y='28' text-anchor='middle' font-size='15' font-weight='800' fill='%23fff' font-family='sans-serif'%3E8%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gothic+A1:wght@400;500;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="map" aria-label="대한민국 지도와 트럭이 움직이는 게임 화면"></canvas>
+<div id="ui">
+  <header id="topbar"></header>
+  <div id="goal"></div>
+  <nav id="dock" aria-label="도구"></nav>
+  <aside id="inspector" aria-label="정보 패널"></aside>
+  <div id="vms" aria-live="off"></div>
+  <div id="mini"><canvas id="minimap" width="150" height="172" aria-label="전국 미니맵"></canvas></div>
+  <div id="toolhint"></div>
+  <div id="tooltip" hidden></div>
+  <div id="toasts"></div>
+  <div id="coach"></div>
+  <div id="banner"></div>
+  <div id="modal"></div>
+</div>
+<div id="boot"><div class="boot-shield"></div><p>지도를 펼치는 중입니다</p></div>
+<noscript>이 게임을 하려면 자바스크립트를 켜 주세요.</noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
