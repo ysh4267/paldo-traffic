@@ -281,6 +281,11 @@ svg { display: block; width: 100%; height: 100%; }
 .welcome-hero p { margin: 7px 0 0; font-size: 14.5px; line-height: 1.55; font-weight: 500; }
 
 /* ── 좁은 화면 ───────────────────────── */
+@media (max-width: 1040px) {
+  #goal { left: 76px; transform: none; max-width: calc(100vw - 76px - 356px - 8px); }
+  #goal .next { display: none; }
+  #goal .track { flex: 1 1 60px; width: auto; min-width: 40px; }
+}
 @media (max-width: 1100px) {
   .brand b { display: none; }
   .brand { padding: 0 6px 0 4px; }
@@ -301,9 +306,9 @@ svg { display: block; width: 100%; height: 100%; }
   .speed button { flex: 1; width: auto; height: 30px; }
   .menu { padding: 3px 0 0 4px; border-left: 0; }
   .menu button { height: 30px; }
-  #goal { left: 50%; top: calc(max(4px, env(safe-area-inset-top, 0px)) + 86px); padding: 4px 9px; font-size: 11.5px; gap: 7px; }
+  #goal { left: 50%; transform: translateX(-50%); max-width: calc(100vw - 16px); top: calc(max(4px, env(safe-area-inset-top, 0px)) + 86px); padding: 4px 9px; font-size: 11.5px; gap: 7px; }
   #goal .route { font-size: 13.5px; }
-  #goal .track { width: 86px; }
+  #goal .track { flex: none; width: 86px; }
   #goal .next { display: none; }
   #dock { top: auto; transform: none; left: 4px; right: 4px; bottom: max(4px, env(safe-area-inset-bottom, 0px)); flex-direction: row; justify-content: space-between; overflow-x: auto; padding: 4px; }
   .tool { width: 40px; height: 42px; flex: none; }

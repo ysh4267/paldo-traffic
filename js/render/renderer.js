@@ -407,11 +407,9 @@ export class Renderer {
         if (n.control === 'interchange') this.drawInterchangeBase(b, n, px);
       }
     } else {
-      // 중간 축척에서도 회전교차로·입체교차로 형태를 살짝 보여준다
+      // 중간 축척에서도 회전교차로 형태를 살짝 보여준다
       for (const n of net.nodes) {
-        if (n.control === 'auto' || n.control === 'signal' || !this.nodeInView(n)) continue;
-        if (n.control === 'roundabout') this.drawRoundaboutBase(b, n, px);
-        else this.drawInterchangeBase(b, n, px);
+        if (n.control === 'roundabout' && this.nodeInView(n)) this.drawRoundaboutBase(b, n, px);
       }
     }
   }
@@ -911,7 +909,9 @@ export class Renderer {
   }
 
   drawNodeIcon(ctx, n, k, size) {
-    if (n.control === 'signal') {
+    if (n.control === 'interchange') {
+      this.drawWorldSprite(ctx, 't_interchange', n.x, n.y, (size + 5) * k, k);
+    } else if (n.control === 'signal') {
       const w = size * k, h = size * 0.42 * k;
       ctx.fillStyle = '#23282c';
       ctx.fillRect(n.x - w / 2, n.y - h / 2, w, h);
