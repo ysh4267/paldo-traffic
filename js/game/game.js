@@ -928,6 +928,75 @@ export class Game {
     v.nextModel = null;
     v.aT = undefined; // 축 길이가 바뀌었으니 다음에 그릴 때 곧게 다시 놓는다
   }
+  // 여러 노선을 바꿀 때의 계획. convertTrucks처럼 노선 안에서는 돈이 모자란 트럭에서 멈춘다
+  planConvert(routes, modelIdx) {
+    const plan = { n: 0, all: 0, cost: 0, full: 0, some: new Set(), every: new Set() };
+    if (!this.modelUnlocked(modelIdx)) return plan;
+    let left = this.money;
+    for (const q of routes) {
+      if (!q.valid) continue;
+      let ok = true;
+      for (const v of this.convertibleTrucks(q, modelIdx)) {
+        const c = this.convertPrice(v, modelIdx);
+        const from = TRUCKS[v.nextModel ?? v.modelIdx];
+        plan.all++;
+        plan.full += c;
+        plan.every.add(from);
+        ok = ok && c <= left;
+        if (!ok) continue;
+        left -= c;
+        plan.cost += c;
+        plan.n++;
+        plan.some.add(from);
+      }
+    }
+    return plan;
+  }
+
+  // ── 여러 노선 한꺼번에 사기 ───────────────────────
+  // 막히지 않을 때 시간당 버는 값
+  routeValue(r) {
+    return r.perTon / (r.freeTime * 2 + 6);
+  }
+  // 이 거점에서 트럭을 더할 노선: 달리는 노선 전부. 하나도 없으면 가장 잘 버는 노선을 연다
+  bulkRoutes(s) {
+    const valid = s.routesOut.filter((q) => q.valid);
+    const running = valid.filter((q) => q.trucks.length);
+    if (running.length) return running;
+    return valid.length ? [valid.reduce((a, b) => (this.routeValue(b) > this.routeValue(a) ? b : a))] : [];
+  }
+  // 노선마다 n대까지 한 바퀴씩 돌며 산다. 잘 버는 노선이 먼저고, 돈이 모자라도 한 노선에 몰리지 않는다
+  planBuy(routes, modelIdx, n) {
+    const plan = { buy: [], n: 0, want: routes.length * n, cost: 0, full: 0 };
+    for (const q of routes) plan.full += this.truckBatchPrice(q, modelIdx, n);
+    if (!this.modelUnlocked(modelIdx)) return plan;
+    const order = routes.filter((q) => q.valid).sort((a, b) => this.routeValue(b) - this.routeValue(a));
+    let left = this.money;
+    for (let round = 0; round < n; round++) {
+      const before = plan.n;
+      for (const q of order) {
+        // 한 번 못 산 노선은 값이 내려가지 않으니 다음 바퀴에도 못 산다
+        const price = TRUCKS[modelIdx].price * (1 + TRUCK_STEP * (q.trucks.length + round));
+        if (price > left) continue;
+        left -= price;
+        plan.cost += price;
+        plan.n++;
+        plan.buy.push(q);
+      }
+      if (plan.n === before) break;
+    }
+    return plan;
+  }
+  bulkBuy(routes, modelIdx, n) {
+    const out = { n: 0, paid: 0 };
+    for (const q of this.planBuy(routes, modelIdx, n).buy) {
+      const price = this.truckPrice(q, modelIdx);
+      if (!this.buyTruck(q, modelIdx)) continue;
+      out.n++;
+      out.paid += price;
+    }
+    return out;
+  }
 
   removeTruck(v) {
     this.dropLot(v);

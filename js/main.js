@@ -147,7 +147,7 @@ class App {
   applyCameraPadding() {
     const narrow = window.innerWidth < 760;
     const cam = this.renderer.cam;
-    const card = this.ui && (this.ui.sel || this.ui.listOpen);
+    const card = this.ui && (this.ui.sel || this.ui.listOpen || this.ui.tool === 'fleet');
     if (narrow) cam.pad = { l: 8, r: 8, t: 84, b: card ? Math.round(window.innerHeight * 0.46) + 56 : 92 };
     else cam.pad = { l: 16, r: card ? 336 : 16, t: 60, b: 70 };
   }
@@ -230,9 +230,9 @@ class App {
       }
       if (!p.moved) return;
       const tool = this.ui.tool;
-      // 차로 도구는 끌어서 범위를 고른다. Shift를 누르면 지나간 도로만 칠한다 (오른쪽 버튼은 언제나 지도 이동)
-      if (tool === 'lane' && p.button === 0) {
-        if (e.shiftKey && p.type === 'mouse' && !p.boxing) {
+      // 차로 도구와 트럭 일괄은 끌어서 범위를 고른다. 차로는 Shift를 누르면 지나간 도로만 칠한다 (오른쪽 버튼은 언제나 지도 이동)
+      if ((tool === 'lane' || tool === 'fleet') && p.button === 0) {
+        if (tool === 'lane' && e.shiftKey && p.type === 'mouse' && !p.boxing) {
           const hit = this.renderer.pick(e.clientX, e.clientY, tool);
           if (hit && hit.road && !this.painted.has(hit.road)) { this.painted.add(hit.road); this.ui.applyAt(hit); }
           this.renderer.hover = hit;
@@ -317,7 +317,7 @@ class App {
     const hit = r.pick(x, y, ui.tool);
     r.hover = ui.area ? null : hit;
     if (ui.tool !== 'select' && !ui.area) ui.updateHint(hit);
-    this.canvas.style.cursor = hit && ui.tool === 'select' ? 'pointer' : '';
+    this.canvas.style.cursor = hit && (ui.tool === 'select' || ui.tool === 'fleet') ? 'pointer' : '';
   }
 
   // ── 미니맵 ─────────────────────────────────────────

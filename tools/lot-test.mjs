@@ -99,6 +99,28 @@ function countOverlaps() {
   }
 }
 
+// 여러 노선을 한꺼번에 사고 바꿀 때 미리 보여 준 값과 실제 값이 같아야 한다. 돈이 모자랄 때도 본다
+function bulkCheck(list) {
+  const picked = list.filter(() => rnd() < 0.08);
+  const money = g.money;
+  const model = Math.floor(rnd() * 4), to = 1 + Math.floor(rnd() * 3);
+  const count = 1 + Math.floor(rnd() * 3);
+  g.money = rnd() < 0.5 ? money : g.planBuy(picked, model, count).full * rnd();
+  const buy = g.planBuy(picked, model, count);
+  const m0 = g.money;
+  const got = g.bulkBuy(picked, model, count);
+  let bad = got.n !== buy.n || Math.abs(got.paid - buy.cost) > 1 || Math.abs(m0 - g.money - buy.cost) > 1;
+  g.money = rnd() < 0.5 ? money : g.planConvert(picked, to).full * rnd();
+  const conv = g.planConvert(picked, to);
+  const m1 = g.money;
+  let n = 0;
+  for (const q of picked) n += g.convertTrucks(q, to).n;
+  bad = bad || n !== conv.n || Math.abs(m1 - g.money - conv.cost) > 1 || g.money < -1;
+  g.money = money;
+  if (bad) console.log('일괄 값이 미리 보여 준 것과 다릅니다', { want: buy.n, got: got.n, cost: buy.cost, paid: got.paid, convWant: conv.n, convGot: n });
+  return bad ? 1 : 0;
+}
+
 let errors = 0;
 let lastDeliv = 0;
 for (let t = 0, tick = 0; t < MINUTES * 60; t += DT, tick++) {
@@ -109,7 +131,8 @@ for (let t = 0, tick = 0; t < MINUTES * 60; t += DT, tick++) {
     const r = list[Math.floor(rnd() * list.length)];
     const roll = rnd();
     if (roll < 0.35) g.buyTruck(r, Math.floor(rnd() * 4));
-    else if (roll < 0.5) g.convertTrucks(r, 1 + Math.floor(rnd() * 3), 2);
+    else if (roll < 0.45) g.convertTrucks(r, 1 + Math.floor(rnd() * 3), 2);
+    else if (roll < 0.5) errors += bulkCheck(list);
     else if (roll < 0.8) g.sellTruck(r);
     else {
       const jam = g.jams[0];

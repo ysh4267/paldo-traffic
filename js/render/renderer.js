@@ -195,6 +195,7 @@ export class Renderer {
     this.hover = null;
     this.highlightRoutes = null;
     this.area = null;       // 끌어서 고른 범위
+    this.fleetPick = null;  // 트럭 일괄로 고른 거점
     this.tool = 'select';
     this.toolColor = ACCENT;
     this.time = 0;
@@ -1536,7 +1537,9 @@ export class Renderer {
       ctx.fill();
     }
     const idle = s.inputs && s.inBuf.some((v) => v < 0.05) && s.stock < 1;
-    const ringF = this.selection?.site === s ? 1 : 0;
+    // 끄는 동안에는 손을 뗐을 때의 모습을 미리 보여 준다
+    const inBox = this.area?.sites?.has(s);
+    const ringF = this.selection?.site === s || (inBox ? !this.area.drop : this.fleetPick?.has(s)) ? 1 : 0;
     s.ringF = (s.ringF || 0) + (ringF - (s.ringF || 0)) * (1 - Math.exp(-this.lastDt * 14));
     if (s.ringF > 0.02) {
       ctx.strokeStyle = ACCENT;
@@ -1689,13 +1692,13 @@ export class Renderer {
   // ── 클릭 판정 ──────────────────────────────────────
   pick(sx, sy, tool = 'select') {
     const cam = this.cam, game = this.game, net = game.net;
-    const wantSite = tool === 'select';
-    const wantNode = tool !== 'lane';
+    const wantSite = tool === 'select' || tool === 'fleet';
+    const wantNode = tool !== 'lane' && tool !== 'fleet';
     const wantRoad = tool === 'select' || tool === 'lane';
     if (wantSite) {
       let best = null, bd = Infinity;
       for (const s of game.sites) {
-        if (!s.available) continue;
+        if (!s.available || (tool === 'fleet' && !s.produces)) continue;
         const r = this.siteBadgeSize(s) * 1.25 + 6;
         const d = Math.hypot(cam.sx(s.x) - sx, cam.sy(s.y) - sy);
         if (d < r && d < bd) { bd = d; best = s; }
