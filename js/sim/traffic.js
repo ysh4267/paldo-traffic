@@ -49,6 +49,7 @@ export class Vehicle {
     this.ringList = null;
     this.mergeLead = null;
     this.a = 0;          // 지금 가속도 km/s² (브레이크를 밟으면 음수)
+    this.ci = 0;         // 지금 경로에서 이미 지나온 급커브 수
     this.odo = 0;
     this.state = 'idle'; // idle | road | bay | queue | ship
     this.cargo = 0;
@@ -152,6 +153,7 @@ export class Traffic {
     v.s = 0;
     v.v = 0;
     v.a = 0;
+    v.ci = 0;
     v.granted = false;
     v.state = 'road';
     v.seg.seg = 0;
@@ -182,7 +184,7 @@ export class Traffic {
     if (behind && s - v.len - GAP < behind.s) return false;
     lane.veh.splice(pos, 0, v);
     v.clearTrail();
-    v.lane = lane; v.conn = null; v.s = s; v.v = edge.speed * v.speedF * 0.8; v.a = 0; v.pi = edgeIndex; v.state = 'road'; v.granted = false;
+    v.lane = lane; v.conn = null; v.s = s; v.v = edge.speed * v.speedF * 0.8; v.a = 0; v.ci = 0; v.pi = edgeIndex; v.state = 'road'; v.granted = false;
     this.activate(lane);
     return true;
   }
@@ -387,7 +389,7 @@ export class Traffic {
     f.resLane = tl;
     f.resFrom = f.lane;
     node.active.push(f);
-    f.connV = this.connSpeed(node, f, turn);
+    f.connV = Math.min(this.connSpeed(node, f, turn), conn.vMax);
     f.waitT = 0;
     f.stopT = 0;
     node.flowCount++;
@@ -460,7 +462,7 @@ export class Traffic {
       tl.pending += need;
       f.mergeLead = tl.lastGranted && tl.lastGranted !== f && tl.lastGranted.targetLane === tl ? tl.lastGranted : null;
       tl.lastGranted = f;
-      f.connV = vRing;
+      f.connV = Math.min(vRing, conn.vMax);
       f.waitT = 0;
       f.ringNode = node;
       f.ringList = list;
@@ -542,6 +544,33 @@ export class Traffic {
     return vNew;
   }
 
+  // 앞쪽 급커브 가운데 지금 가장 먼저 속도를 줄여야 할 곳을 cornerV, cornerD에 남긴다
+  cornerAhead(c, cs, s) {
+    let i = c.ci;
+    while (i < cs.length && cs[i].s1 < s) i++;
+    c.ci = i;
+    if (i >= cs.length) return false;
+    const brk = c.brake;
+    let best = Infinity;
+    for (let q = i; q < cs.length && q < i + 3; q++) {
+      const C = cs[q];
+      const d = Math.max(0, C.s0 - s);
+      const lim = C.v * C.v + 2 * brk * Math.max(d - c.v * TAU, 0);
+      if (lim < best) {
+        best = lim;
+        this.cornerV = C.v;
+        this.cornerD = d;
+      }
+    }
+    return true;
+  }
+  // (v1, d1)이 지금 줄이려던 (v0, d0)보다 더 급한가
+  tighter(c, v1, d1, v0, d0) {
+    if (d0 === undefined) return true;
+    const brk = c.brake, vt = c.v * TAU;
+    return v1 * v1 + 2 * brk * Math.max(d1 - vt, 0) < v0 * v0 + 2 * brk * Math.max(d0 - vt, 0);
+  }
+
   stepConn(conn, dt) {
     const vs = conn.veh;
     const tl = conn.toLane;
@@ -589,6 +618,7 @@ export class Traffic {
       c.lane = tl;
       c.pi++;
       c.seg.seg = 0;
+      c.ci = 0;
       c.granted = false;
       c.nextConn = null;
       c.targetLane = null;
@@ -603,6 +633,7 @@ export class Traffic {
     const e = lane.edge;
     const L = e.L;
     const roadV = e.speed;
+    const cs = e.cornerList();
     for (let i = 0; i < vs.length; i++) {
       const c = vs[i];
       let gap, leadV, slowV, slowD;
@@ -656,6 +687,10 @@ export class Traffic {
             if (g2 < gap) { gap = g2; leadV = le.v; }
           }
         }
+      }
+      if (cs.length && this.cornerAhead(c, cs, c.s) && this.tighter(c, this.cornerV, this.cornerD, slowV, slowD)) {
+        slowV = this.cornerV;
+        slowD = this.cornerD;
       }
       const ds = this.drive(c, roadV * c.speedF, gap, leadV, head, dt, slowV, slowD) * dt;
       c.s += ds;

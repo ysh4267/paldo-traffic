@@ -7,6 +7,75 @@ export const MAX_LANES = { x: 5, n: 4, r: 3, s: 3, f: 1 };
 export const BASE_LANES = { x: 2, n: 1, r: 1, s: 1, f: 1 };
 export const ROAD_SPEED = { x: 1, n: 0.74, r: 0.62, s: 0.5, f: 0.5 };
 export const V0 = 5.6; // 고속도로 기준 속도 km/s
+const OMEGA = 2.4;       // 트럭이 도는 모습이 어색하지 않은 가장 빠른 방향 변화 rad/s
+const TURN_WINDOW = 1;   // 방향 변화를 재는 구간 km
+const V_FLOOR = 0.8;     // 아무리 급해도 이 속도까지만 줄인다 km/s
+const V_KEEP = 6;        // 이보다 빠르게 지날 수 있는 곳은 급커브로 치지 않는다
+const ROUND_MAX_R = 3.5; // 도로 꼭짓점을 둥글릴 때의 가장 큰 반경 km
+const TURN_R = 0.6;      // 트럭이 도는 가장 작은 반경 km. 교차로 곡선이 이보다 많이 급하면 크게 돌아 나온다
+
+const wrapAngle = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+
+// 좌표열의 급커브 구간 [{s0, s1, v}]. 1km 안에서 방향이 많이 바뀔수록 v가 낮다
+export function findCorners(pts) {
+  const n = pts.length / 2;
+  const out = [];
+  if (n < 3) return out;
+  const cum = new Float64Array(n), turn = new Float64Array(n);
+  for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
+  for (let i = 1; i < n - 1; i++) {
+    const a0 = Math.atan2(pts[i * 2 + 1] - pts[i * 2 - 1], pts[i * 2] - pts[i * 2 - 2]);
+    const a1 = Math.atan2(pts[i * 2 + 3] - pts[i * 2 + 1], pts[i * 2 + 2] - pts[i * 2]);
+    turn[i] = wrapAngle(a1 - a0);
+  }
+  let lo = 1, hi = 1, sum = 0, cur = null;
+  for (let i = 1; i < n - 1; i++) {
+    while (hi < n - 1 && cum[hi] <= cum[i] + TURN_WINDOW / 2) sum += turn[hi++];
+    while (lo < n - 1 && cum[lo] < cum[i] - TURN_WINDOW / 2) sum -= turn[lo++];
+    const span = Math.min(cum[n - 1], cum[i] + TURN_WINDOW / 2) - Math.max(0, cum[i] - TURN_WINDOW / 2);
+    const v = Math.max(V_FLOOR, (OMEGA * span) / Math.max(Math.abs(sum), 1e-3));
+    if (v >= V_KEEP) continue;
+    if (cur && cum[i] - cur.s1 < 0.3) {
+      cur.s1 = cum[i];
+      if (v < cur.v) cur.v = v;
+    } else {
+      cur = { s0: cum[i], s1: cum[i], v };
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
+// 도로 꼭짓점을 둥글게 편다. 되돌아가는 짧은 가시는 먼저 없앤다
+function roundCorners(flat) {
+  const p = [];
+  for (let i = 0; i < flat.length; i += 2) p.push([flat[i], flat[i + 1]]);
+  const angleAt = (i) => wrapAngle(Math.atan2(p[i + 1][1] - p[i][1], p[i + 1][0] - p[i][0]) - Math.atan2(p[i][1] - p[i - 1][1], p[i][0] - p[i - 1][0]));
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  for (let i = 1; i < p.length - 1; i++) {
+    if (Math.abs(angleAt(i)) > 2 && Math.min(dist(p[i], p[i - 1]), dist(p[i], p[i + 1])) < 1) {
+      p.splice(i, 1);
+      i = 0;
+    }
+  }
+  const out = [p[0][0], p[0][1]];
+  for (let i = 1; i < p.length - 1; i++) {
+    const th = Math.abs(angleAt(i));
+    if (th < 0.15) { out.push(p[i][0], p[i][1]); continue; }
+    const la = dist(p[i], p[i - 1]), lb = dist(p[i], p[i + 1]);
+    const T = Math.min(la * 0.42, lb * 0.42, ROUND_MAX_R * Math.tan(th / 2));
+    const ax = p[i][0] + ((p[i - 1][0] - p[i][0]) / la) * T, ay = p[i][1] + ((p[i - 1][1] - p[i][1]) / la) * T;
+    const bx = p[i][0] + ((p[i + 1][0] - p[i][0]) / lb) * T, by = p[i][1] + ((p[i + 1][1] - p[i][1]) / lb) * T;
+    const m = Math.ceil(th / 0.22) + 1;
+    for (let j = 0; j <= m; j++) {
+      const t = j / m, u = 1 - t;
+      out.push(u * u * ax + 2 * u * t * p[i][0] + t * t * bx, u * u * ay + 2 * u * t * p[i][1] + t * t * by);
+    }
+  }
+  const e = p[p.length - 1];
+  out.push(e[0], e[1]);
+  return out;
+}
 
 export const laneOffset = (i) => MEDIAN + LANE_W * (i + 0.5);
 
@@ -88,11 +157,28 @@ export class Edge {
     const segLen = cum[i + 1] - cum[i];
     const t = segLen > 0 ? (d - cum[i]) / segLen : 0;
     let tx = segLen > 0 ? (x1 - x0) / segLen : 1, ty = segLen > 0 ? (y1 - y0) / segLen : 0;
-    if (this.rev) { tx = -tx; ty = -ty; }
-    out[0] = x0 + (x1 - x0) * t - ty * offset;
-    out[1] = y0 + (y1 - y0) * t + tx * offset;
+    // 꼭짓점에서 차로가 끊겨 튀지 않도록 양 끝 법선 사이를 잇는다
+    const nrm = r.nrm;
+    let nx = nrm[i * 2] + (nrm[i * 2 + 2] - nrm[i * 2]) * t, ny = nrm[i * 2 + 1] + (nrm[i * 2 + 3] - nrm[i * 2 + 1]) * t;
+    if (this.rev) { tx = -tx; ty = -ty; nx = -nx; ny = -ny; }
+    out[0] = x0 + (x1 - x0) * t + nx * offset;
+    out[1] = y0 + (y1 - y0) * t + ny * offset;
     out[2] = tx;
     out[3] = ty;
+    return out;
+  }
+  // 이 방향으로 달릴 때 만나는 급커브. s는 차로 위 거리
+  cornerList() {
+    if (this.cornerVer === this.geomVersion && this.corners) return this.corners;
+    const r = this.road, out = [];
+    for (const c of r.corners) {
+      const s0 = this.rev ? r.len - c.s1 - this.trim0 : c.s0 - this.trim0;
+      const s1 = this.rev ? r.len - c.s0 - this.trim0 : c.s1 - this.trim0;
+      if (s1 > 0 && s0 < this.L) out.push({ s0: Math.max(0, s0), s1: Math.min(this.L, s1), v: c.v });
+    }
+    if (this.rev) out.reverse();
+    this.corners = out;
+    this.cornerVer = this.geomVersion;
     return out;
   }
   // 차로 중앙을 따라가는 좌표열 (렌더링용)
@@ -133,7 +219,7 @@ export class Road {
     this.stage = d.stage ?? 0;
     this.lanes = BASE_LANES[d.k];
     this.built = !d.lock;
-    this.pts = Float64Array.from(d.p);
+    this.pts = Float64Array.from(d.k === 'f' ? d.p : roundCorners(d.p));
     const n = this.pts.length / 2;
     this.cum = new Float64Array(n);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -145,9 +231,34 @@ export class Road {
     }
     this.len = this.cum[n - 1];
     this.bb = [x0, y0, x1, y1];
+    this.nrm = this.vertexNormals();
+    this.corners = d.k === 'f' ? [] : findCorners(this.pts);
     this.open = false;
     this.fwd = null;
     this.bwd = null;
+  }
+  // 꼭짓점의 왼쪽 법선. 꺾인 만큼 길게 해 차로 폭을 유지한다
+  vertexNormals() {
+    const pts = this.pts, n = pts.length / 2;
+    const out = new Float64Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+      let ux = pts[i * 2] - pts[a * 2], uy = pts[i * 2 + 1] - pts[a * 2 + 1];
+      let wx = pts[b * 2] - pts[i * 2], wy = pts[b * 2 + 1] - pts[i * 2 + 1];
+      const lu = Math.hypot(ux, uy), lw = Math.hypot(wx, wy);
+      if (lu > 0) { ux /= lu; uy /= lu; } else { ux = wx / (lw || 1); uy = wy / (lw || 1); }
+      if (lw > 0) { wx /= lw; wy /= lw; } else { wx = ux; wy = uy; }
+      let nx = -uy - wy, ny = ux + wx;
+      const l = Math.hypot(nx, ny);
+      if (l < 0.1) { nx = -wy; ny = wx; } else {
+        nx /= l; ny /= l;
+        const f = Math.min(1.5, 1 / Math.max(0.5, nx * -uy + ny * ux));
+        nx *= f; ny *= f;
+      }
+      out[i * 2] = nx;
+      out[i * 2 + 1] = ny;
+    }
+    return out;
   }
   // 노드 쪽에서 바라본 도로 방향 단위벡터
   dirAt(nodeId, dist = 1.6) {
@@ -194,6 +305,14 @@ export class Polyline {
     this.cum = new Float64Array(n);
     for (let i = 1; i < n; i++) this.cum[i] = this.cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
     this.len = Math.max(0.2, this.cum[n - 1]);
+  }
+  // 급커브 구간. 트럭은 들어가기 전에 이 속도로 줄인다
+  get corners() { return this.cornerCache || (this.cornerCache = findCorners(this.pts)); }
+  // 이 경로를 어색하지 않게 지날 수 있는 가장 빠른 속도
+  get vMax() {
+    let v = Infinity;
+    for (const c of this.corners) if (c.v < v) v = c.v;
+    return v;
   }
   sample(s, out) {
     const cum = this.cum, pts = this.pts, n = cum.length;
@@ -436,7 +555,9 @@ export class Network {
     const p1 = toLane.edge.sample(0, laneOffset(toLane.index), [0, 0, 0, 0]);
     if (node.control === 'roundabout') c = this.ringConn(node, fromLane, toLane, p0, p1, ringIdx);
     else {
-      const pts = bezier(p0[0], p0[1], p0[2], p0[3], p1[0], p1[1], p1[2], p1[3], 9);
+      let pts = bezier(p0[0], p0[1], p0[2], p0[3], p1[0], p1[1], p1[2], p1[3], 14, true);
+      // 곡선 하나로 돌기엔 너무 좁으면 바깥으로 크게 돌아 나온다
+      if (p0[2] * p1[2] + p0[3] * p1[3] < 0.1 && tightestOnLine(pts) < TURN_R * 0.75) pts = wideTurn(p0, p1, TURN_R) || pts;
       c = new Conn(fromLane, toLane, pts);
     }
     fromLane.conns.set(key, c);
@@ -482,11 +603,115 @@ export class Network {
   nodeOfSite(site) { return this.nodes[site.node]; }
 }
 
-export function bezier(x0, y0, tx0, ty0, x1, y1, tx1, ty1, n) {
+// 좌표열에서 가장 급한 곳의 반경
+function tightestOnLine(p) {
+  let best = Infinity;
+  for (let i = 2; i + 3 < p.length; i += 2) {
+    const d = Math.abs(wrapAngle(Math.atan2(p[i + 3] - p[i + 1], p[i + 2] - p[i]) - Math.atan2(p[i + 1] - p[i - 1], p[i] - p[i - 2])));
+    if (d < 1e-4) continue;
+    best = Math.min(best, (Math.hypot(p[i + 2] - p[i], p[i + 3] - p[i + 1]) + Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1])) / 2 / d);
+  }
+  return best;
+}
+
+// 시작(p0)과 끝(p1)의 위치와 방향을 지키면서 반경 R보다 급하게 돌지 않는 가장 짧은 길 (Dubins 경로).
+// 원호 L, R과 직선 S를 이어 만든다. 터무니없이 돌아가면 null
+function wideTurn(p0, p1, R) {
+  const TAU = Math.PI * 2;
+  const mod = (a) => a - TAU * Math.floor(a / TAU);
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+  const D = Math.hypot(dx, dy) / R;
+  const phi = Math.atan2(dy, dx);
+  const a = mod(Math.atan2(p0[3], p0[2]) - phi), b = mod(Math.atan2(p1[3], p1[2]) - phi);
+  const sa = Math.sin(a), sb = Math.sin(b), ca = Math.cos(a), cb = Math.cos(b), cab = Math.cos(a - b);
+  const words = [];
+  let q2 = 2 + D * D - 2 * cab + 2 * D * (sa - sb);
+  if (q2 >= 0) { const m = Math.atan2(cb - ca, D + sa - sb); words.push(['LSL', mod(m - a), Math.sqrt(q2), mod(b - m)]); }
+  q2 = 2 + D * D - 2 * cab + 2 * D * (sb - sa);
+  if (q2 >= 0) { const m = Math.atan2(ca - cb, D - sa + sb); words.push(['RSR', mod(a - m), Math.sqrt(q2), mod(m - b)]); }
+  q2 = -2 + D * D + 2 * cab + 2 * D * (sa + sb);
+  if (q2 >= 0) { const q = Math.sqrt(q2), m = Math.atan2(-ca - cb, D + sa + sb) - Math.atan2(-2, q); words.push(['LSR', mod(m - a), q, mod(m - b)]); }
+  q2 = -2 + D * D + 2 * cab - 2 * D * (sa + sb);
+  if (q2 >= 0) { const q = Math.sqrt(q2), m = Math.atan2(ca + cb, D - sa - sb) - Math.atan2(2, q); words.push(['RSL', mod(a - m), q, mod(b - m)]); }
+  let c = (6 - D * D + 2 * cab + 2 * D * (sa - sb)) / 8;
+  if (Math.abs(c) <= 1) {
+    const q = mod(TAU - Math.acos(c)), t = mod(a - Math.atan2(ca - cb, D - sa + sb) + q / 2);
+    words.push(['RLR', t, q, mod(a - b - t + q)]);
+  }
+  c = (6 - D * D + 2 * cab + 2 * D * (sb - sa)) / 8;
+  if (Math.abs(c) <= 1) {
+    const q = mod(TAU - Math.acos(c)), t = mod(-a + Math.atan2(cb - ca, D + sa - sb) + q / 2);
+    words.push(['LRL', t, q, mod(b - a - t + q)]);
+  }
+  let best = null, bestLen = Infinity;
+  for (const w of words) {
+    const len = w[1] + w[2] + w[3];
+    if (len < bestLen) { bestLen = len; best = w; }
+  }
+  if (!best || bestLen * R > 9) return null;
+  // 원호와 직선을 차례로 따라가며 찍는다
+  let x = p0[0], y = p0[1], h = Math.atan2(p0[3], p0[2]);
+  const pts = [x, y];
+  for (let i = 0; i < 3; i++) {
+    const kind = best[0][i], len = best[i + 1];
+    if (len < 1e-6) continue;
+    if (kind === 'S') {
+      x += Math.cos(h) * len * R;
+      y += Math.sin(h) * len * R;
+      pts.push(x, y);
+      continue;
+    }
+    const sign = kind === 'L' ? 1 : -1;
+    const m = Math.max(1, Math.ceil(len / 0.2));
+    const cx = x - Math.sin(h) * R * sign, cy = y + Math.cos(h) * R * sign;
+    for (let j = 1; j <= m; j++) {
+      const q = h + (sign * len * j) / m;
+      pts.push(cx + Math.sin(q) * R * sign, cy - Math.cos(q) * R * sign);
+    }
+    h += sign * len;
+    x = pts[pts.length - 2];
+    y = pts[pts.length - 1];
+  }
+  pts[pts.length - 2] = p1[0];
+  pts[pts.length - 1] = p1[1];
+  return pts;
+}
+
+// 곡선에서 가장 급한 곳의 반경
+function tightestRadius(x0, y0, c1x, c1y, c2x, c2y, x1, y1) {
+  let best = Infinity;
+  for (let i = 0; i <= 16; i++) {
+    const t = i / 16, u = 1 - t;
+    const dx = 3 * (u * u * (c1x - x0) + 2 * u * t * (c2x - c1x) + t * t * (x1 - c2x));
+    const dy = 3 * (u * u * (c1y - y0) + 2 * u * t * (c2y - c1y) + t * t * (y1 - c2y));
+    const ddx = 6 * (u * (c2x - 2 * c1x + x0) + t * (x1 - 2 * c2x + c1x));
+    const ddy = 6 * (u * (c2y - 2 * c1y + y0) + t * (y1 - 2 * c2y + c1y));
+    const speed = Math.hypot(dx, dy);
+    const cross = Math.abs(dx * ddy - dy * ddx);
+    if (cross > 1e-9 && speed > 1e-6) best = Math.min(best, (speed * speed * speed) / cross);
+    else if (speed <= 1e-6) best = 0;
+  }
+  return best;
+}
+const HANDLE = [0.25, 0.35, 0.45, 0.55, 0.7, 0.85, 1, 1.25, 1.5, 2];
+
+// gentle: 많이 돌아야 하면 가장 급한 곳이 가장 완만해지는 손잡이 길이를 찾는다
+export function bezier(x0, y0, tx0, ty0, x1, y1, tx1, ty1, n, gentle = false) {
   const d = Math.hypot(x1 - x0, y1 - y0);
-  const k = Math.min(d * 0.42, 2.2);
-  const c1x = x0 + tx0 * k, c1y = y0 + ty0 * k;
-  const c2x = x1 - tx1 * k, c2y = y1 - ty1 * k;
+  let k0 = Math.min(d * 0.42, 2.2), k1 = k0;
+  if (gentle && tx0 * tx1 + ty0 * ty1 < 0.4) {
+    let best = -Infinity;
+    for (const a of HANDLE) {
+      for (const b of HANDLE) {
+        const r = tightestRadius(x0, y0, x0 + tx0 * a * d, y0 + ty0 * a * d, x1 - tx1 * b * d, y1 - ty1 * b * d, x1, y1);
+        // 비슷하면 짧은 쪽이 낫다
+        const score = r - (a + b) * d * 0.02;
+        if (score > best) { best = score; k0 = a * d; k1 = b * d; }
+      }
+    }
+  }
+  const c1x = x0 + tx0 * k0, c1y = y0 + ty0 * k0;
+  const c2x = x1 - tx1 * k1, c2y = y1 - ty1 * k1;
   const pts = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n, u = 1 - t;

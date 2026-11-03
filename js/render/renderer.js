@@ -40,6 +40,9 @@ const TRUCK_GEO = {
   express: { fo: 0.11, wb: 0.58 },
   trailer: { fo: 0.1, wb: 0.34, wb2: 0.98 },
 };
+const MAX_STEER = 1.05;   // 앞바퀴가 꺾이는 한계(라디안). 더 꺾이면 뒤축이 뒤로 밀려 제자리에서 도는 것처럼 보인다
+const MAX_JOINT = 1.3;    // 트레일러가 꺾이는 한계
+const STEER_RATE = 7;     // 한계를 넘었을 때 몸체를 돌려 맞추는 빠르기 rad/s
 const NODE_TOOLS = new Set(['yield', 'stop', 'signal', 'roundabout', 'interchange', 'remove']);
 const KM_LOT = 0.3;       // 이보다 가까우면 주차장을 그린다
 
@@ -1016,27 +1019,44 @@ export class Renderer {
       if (Math.abs(v.aErrX) + Math.abs(v.aErrY) < 0.001) { v.aErrX = 0; v.aErrY = 0; }
       lx += v.aErrX; ly += v.aErrY;
     }
-    const tow = (ax, ay, bx, by, dist, out) => {
-      const dx = bx - ax, dy = by - ay;
+    // 끄는 점 a(직전 위치 p)가 끌려오는 점 b를 거리 dist로 당긴다.
+    // 몸체가 a가 움직인 방향과 limit 넘게 벌어지면 조금씩 돌려 맞춰, b가 뒤로 밀리지 않게 한다
+    const tow = (ax, ay, px, py, bx, by, dist, limit, out) => {
+      let dx = bx - ax, dy = by - ay;
       const l = Math.hypot(dx, dy) || 1;
-      out[0] = ax + (dx / l) * dist;
-      out[1] = ay + (dy / l) * dist;
+      dx /= l; dy /= l;
+      let ux = px - ax, uy = py - ay;
+      const m = Math.hypot(ux, uy);
+      if (m > 1e-4) {
+        ux /= m; uy /= m;
+        const ang = Math.acos(Math.max(-1, Math.min(1, dx * ux + dy * uy)));
+        if (ang > limit) {
+          const to = ang - Math.min(ang - limit, STEER_RATE * dt);
+          const sign = ux * dy - uy * dx >= 0 ? 1 : -1;
+          const c = Math.cos(to), s = Math.sin(to) * sign;
+          dx = ux * c - uy * s;
+          dy = ux * s + uy * c;
+        }
+      }
+      out[0] = ax + dx * dist;
+      out[1] = ay + dy * dist;
     };
     const q = this.tmp3;
+    const p0x = v.a0x, p0y = v.a0y, p1x = v.a1x, p1y = v.a1y, p2x = v.a2x, p2y = v.a2y;
     if (!reverse) {
       v.a0x = lx; v.a0y = ly;
-      tow(v.a0x, v.a0y, v.a1x, v.a1y, wb, q);
+      tow(v.a0x, v.a0y, p0x, p0y, v.a1x, v.a1y, wb, MAX_STEER, q);
       v.a1x = q[0]; v.a1y = q[1];
-      if (g.wb2) { tow(v.a1x, v.a1y, v.a2x, v.a2y, wb2, q); v.a2x = q[0]; v.a2y = q[1]; }
+      if (g.wb2) { tow(v.a1x, v.a1y, p1x, p1y, v.a2x, v.a2y, wb2, MAX_JOINT, q); v.a2x = q[0]; v.a2y = q[1]; }
     } else if (g.wb2) {
       v.a2x = lx; v.a2y = ly;
-      tow(v.a2x, v.a2y, v.a1x, v.a1y, wb2, q);
+      tow(v.a2x, v.a2y, p2x, p2y, v.a1x, v.a1y, wb2, MAX_JOINT, q);
       v.a1x = q[0]; v.a1y = q[1];
-      tow(v.a1x, v.a1y, v.a0x, v.a0y, wb, q);
+      tow(v.a1x, v.a1y, p1x, p1y, v.a0x, v.a0y, wb, MAX_STEER, q);
       v.a0x = q[0]; v.a0y = q[1];
     } else {
       v.a1x = lx; v.a1y = ly;
-      tow(v.a1x, v.a1y, v.a0x, v.a0y, wb, q);
+      tow(v.a1x, v.a1y, p1x, p1y, v.a0x, v.a0y, wb, MAX_STEER, q);
       v.a0x = q[0]; v.a0y = q[1];
     }
   }

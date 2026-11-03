@@ -474,6 +474,7 @@ export class Game {
     const seg = s.lot.pathIn(stall, lane ? lane.index : 0);
     if (lane) v.passed(lane);
     v.state = 'lot';
+    v.ci = 0;
     v.lot = this.newLotState(s, stall, 'in', seg, lane ? v.s - lane.edge.L : 0);
     s.lot.enter(v);
     this.lotVehicles.add(v);
@@ -516,6 +517,7 @@ export class Game {
     L.s = v.len;
     v.v = 0;
     v.a = 0;
+    v.ci = 0;
     L.wait = 0;
     L.ghost = 0;
     L.hold = LOT_SHIFT;
@@ -577,7 +579,12 @@ export class Game {
           blocker = lot.lead;
         }
       }
-      const u = this.traffic.drive(v, L.phase === 'back' ? LOT_V_BACK : LOT_V, gap, leadV, head, dt, slowV, slowD);
+      const cs = L.seg.corners, tr = this.traffic;
+      if (cs.length && tr.cornerAhead(v, cs, L.s) && tr.tighter(v, tr.cornerV, tr.cornerD, slowV, slowD)) {
+        slowV = tr.cornerV;
+        slowD = tr.cornerD;
+      }
+      const u = tr.drive(v, L.phase === 'back' ? LOT_V_BACK : LOT_V, gap, leadV, head, dt, slowV, slowD);
       // 다른 방향으로 가는 트럭과 서로 막고 있으면 언젠가는 비켜 지나간다. 같은 줄의 앞차는 끝까지 기다린다
       if (blocker && u < 0.05 && blocker.lot.phase !== L.phase && !(L.phase === 'out' && blocker.lot.phase === 'exit')) {
         L.wait += dt;
@@ -616,6 +623,7 @@ export class Game {
         lot.updateBody(v);
         v.v = 0;
         v.a = 0;
+        v.ci = 0;
         L.hold = LOT_SHIFT;
         list[keep++] = v;
       } else {

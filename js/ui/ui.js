@@ -155,7 +155,7 @@ export class UI {
     this.r.hover = null;
     this.r.toolColor = id === 'remove' ? '#d9412b' : '#3f7fb8';
     this.r.baseDirty = true;
-    document.getElementById('map').classList.toggle('tool', id !== 'select');
+    document.getElementById('map').classList.toggle('placing', id !== 'select');
     this.renderDock();
     this.updateHint(null);
   }
