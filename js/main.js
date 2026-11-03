@@ -364,7 +364,7 @@ class App {
       } else if (e.type === 'city') {
         r.ping(e.site.x, e.site.y, '#f6b01e');
         r.baseDirty = true;
-        if (e.stage >= 2) ui.toast('city', `${josa(e.site.name, '이', '가')} 성장했습니다`, `납품 운임 +${e.stage * 8}%`, () => ui.goSite(e.site));
+        if (e.stage >= 2) ui.toast('city', `${josa(e.site.name, '이', '가')} 성장했습니다`, `납품가 +${e.stage * 8}%`, () => ui.goSite(e.site));
       } else if (e.type === 'tech') {
         ui.toast(e.tech.icon, `${e.tech.name} 연구 완료`);
         ui.renderDock();
@@ -373,12 +373,12 @@ class App {
         ui.showBanner('도로 개통', e.project.name, e.project.desc, true);
         ui.toast(e.project.kind === 'bridge' ? 'bridge' : 'bypass', `${e.project.name} 개통`, '트럭이 새 길을 이용합니다');
       } else if (e.type === 'first') {
-        ui.toast('won', '첫 운임을 받았습니다', '돈이 모이면 트럭을 더 사세요');
+        ui.toast('won', '첫 납품 대금을 받았습니다', '돈이 모이면 트럭을 더 사세요');
       } else if (e.type === 'alldone') {
         this.sound.fanfare();
         ui.openModal('alldone');
       } else if (e.type === 'boom') {
-        ui.toast('star', `붐 ${e.level + 1}단계`, `전국 운임 +${e.level * 15}%`);
+        ui.toast('star', `붐 ${e.level + 1}단계`, `전국 납품가 +${e.level * 15}%`);
       } else if (e.type === 'rescue') {
         ui.toast('truck_hauler', '정부 지원 트럭 한 대를 받았습니다', '자금이 바닥나도 다시 시작할 수 있습니다');
       }
