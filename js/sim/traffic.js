@@ -86,7 +86,6 @@ export class Traffic {
     this.arrivals = []; // 배에서 내린 차
     this.smartSignals = false;
     this.statT = 0;
-    this.moved = 0;
     this.nextId = 1;
     for (const r of net.roads) if (r.kind === 'f') { const fy = new Ferry(r); r.ferryObj = fy; this.ferries.push(fy); }
   }

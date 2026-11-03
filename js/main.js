@@ -3,7 +3,7 @@ import { Game } from './game/game.js';
 import { Renderer } from './render/renderer.js';
 import { UI } from './ui/ui.js';
 import { Sound } from './ui/audio.js';
-import { fmtWon, josa } from './game/defs.js';
+import { josa } from './game/defs.js';
 import { iconHtml } from './render/art.js';
 
 const SAVE_KEY = 'paldo-traffic-save-v1';
@@ -357,7 +357,7 @@ class App {
       } else if (e.type === 'project') {
         r.baseDirty = true;
         ui.showBanner('도로 개통', e.project.name, e.project.desc, true);
-        ui.toast('build', `${e.project.name} 개통`, '트럭이 새 길을 이용합니다');
+        ui.toast(e.project.kind === 'bridge' ? 'bridge' : 'bypass', `${e.project.name} 개통`, '트럭이 새 길을 이용합니다');
       } else if (e.type === 'first') {
         ui.toast('won', '첫 운임을 받았습니다', '돈이 모이면 트럭을 더 사세요');
       } else if (e.type === 'alldone') {
@@ -366,7 +366,7 @@ class App {
       } else if (e.type === 'boom') {
         ui.toast('star', `붐 ${e.level + 1}단계`, `전국 운임 +${e.level * 15}%`);
       } else if (e.type === 'rescue') {
-        ui.toast('truck', '정부 지원 트럭 한 대를 받았습니다', '자금이 바닥나도 다시 시작할 수 있습니다');
+        ui.toast('truck_hauler', '정부 지원 트럭 한 대를 받았습니다', '자금이 바닥나도 다시 시작할 수 있습니다');
       }
     }
   }
@@ -435,7 +435,6 @@ async function main() {
     try { await document.fonts.load('700 14px "Gothic A1"'); await document.fonts.load('16px "Do Hyeon"'); await document.fonts.load('20px "Black Han Sans"'); } catch { /* 글꼴이 없어도 진행 */ }
     window.app = new App(data);
     document.getElementById('boot').classList.add('gone');
-    void fmtWon;
   } catch (err) {
     console.error(err);
     const boot = document.getElementById('boot');

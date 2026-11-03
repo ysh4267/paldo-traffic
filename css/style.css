@@ -99,6 +99,7 @@ svg { display: block; width: 100%; height: 100%; }
 .p-head.blue { background: var(--blue); box-shadow: inset 0 0 0 2px var(--blue), inset 0 0 0 3px rgba(255,255,255,.7); }
 .p-head.dark { background: var(--asphalt); box-shadow: inset 0 0 0 2px var(--asphalt), inset 0 0 0 3px rgba(255,255,255,.5); }
 .p-head .badge { width: 40px; height: 40px; background: #fff; border-radius: 50%; padding: 5px; flex: none; }
+.p-head .badge .ico { width: 100%; height: 100%; display: block; }
 .p-head .shield { width: 34px; height: 36px; flex: none; }
 .p-title { min-width: 0; flex: 1; }
 .p-title h2 { margin: 0; font-family: var(--signal); font-weight: 400; font-size: 21px; line-height: 1.15; overflow-wrap: anywhere; }

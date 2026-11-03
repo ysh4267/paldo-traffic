@@ -1,8 +1,7 @@
 // 화면 UI 전체: 상단 안내판, 도구 독, 정보 패널, 창, 알림
 import { h, ico, raw, patch } from './dom.js';
 import { iconHtml, routeShield } from '../render/art.js';
-import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, TIER_NAME, REGION_GOAL, fmtWon, fmtKo, fmtTon, fmtTime, josa } from '../game/defs.js';
-import { LANE_W } from '../sim/network.js';
+import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, TIER_NAME, fmtWon, fmtKo, fmtTon, fmtTime, josa } from '../game/defs.js';
 
 export const TOOLS = [
   { id: 'select', icon: 't_select', name: '선택', key: '1', desc: '거점과 교차로, 도로를 눌러 자세히 봅니다.' },
@@ -18,8 +17,6 @@ export const TOOLS = [
 const CITY_STAGE_NAME = ['마을', '읍내', '소도시', '중도시', '대도시', '메가시티'];
 const CONTROL_NAME = { auto: '비보호 교차로', signal: '신호 교차로', roundabout: '회전교차로', interchange: '입체교차로' };
 const KIND_NAME = { x: '고속도로', n: '국도', r: '연결로', s: '진입로', f: '뱃길' };
-
-const svgStr = (s) => s;
 
 export class UI {
   constructor(app) {
@@ -418,7 +415,7 @@ export class UI {
     const regionName = g.regions[s.region].short;
     const headCls = s.isCity ? '' : s.kind === 'port' ? 'blue' : s.inputs ? 'blue' : 'dark';
     const iconName = s.isCity && s.kind !== 'dokdo' ? 'city' : s.kind;
-    const head = this.head(headCls, h('div', { class: 'badge' }, raw(iconHtml(iconName), 'ico" style="width:100%;height:100%'.split('"')[0])), s.name, `${regionName} · ${SITE_KIND_NAME[s.kind]}${s.isCity && s.kind === 'city' ? ` · ${CITY_STAGE_NAME[s.cityStage]}` : ''}`, () => this.select(null));
+    const head = this.head(headCls, h('div', { class: 'badge' }, raw(iconHtml(iconName), 'ico')), s.name, `${regionName} · ${SITE_KIND_NAME[s.kind]}${s.isCity && s.kind === 'city' ? ` · ${CITY_STAGE_NAME[s.cityStage]}` : ''}`, () => this.select(null));
     const body = [];
     if (s.produces) body.push(...this.productionSec(s));
     if (s.isCity || s.kind === 'port') body.push(...this.consumerSec(s));
@@ -626,7 +623,7 @@ export class UI {
     const price = g.projectPrice(p);
     const avail = g.projectAvailable(p);
     const stageName = g.regions[p.stage]?.short || '';
-    return [this.head('blue', raw(iconHtml(p.kind === 'bridge' ? 'ship' : 'build'), 'ico'), p.name, `${p.kind === 'bridge' ? '대교·해상 도로' : '우회 고속도로'} · ${Math.round(p.km)}km`, () => this.select(null)),
+    return [this.head('blue', h('div', { class: 'badge' }, raw(iconHtml(p.kind === 'bridge' ? 'bridge' : 'bypass'), 'ico')), p.name, `${p.kind === 'bridge' ? '대교·해상 도로' : '우회 고속도로'} · ${Math.round(p.km)}km`, () => this.select(null)),
       h('div', { class: 'p-body', key: `body-p${p.id}` },
         h('p', { class: 'note', key: 'd' }, p.desc),
         h('p', { class: 'note', key: 'n' }, '건설하면 트럭들이 알아서 더 빠른 길로 다닙니다. 막히는 구간의 교통량을 나누는 데 좋습니다.'),
@@ -641,14 +638,13 @@ export class UI {
     const fy = r.ferryObj;
     const price = g.ferryPrice(fy);
     const state = fy.state === 'dock' ? '접안 중' : '운항 중';
-    const a = fy.sideOf(r.a);
     return [this.head('blue', raw(iconHtml('ship'), 'ico'), r.name, `${Math.round(r.len)}km 뱃길 · ${state}`, () => this.select(null)),
       h('div', { class: 'p-body', key: `body-f${r.id}` },
         h('div', { class: 'kv', key: 'kv' },
           h('div', null, h('small', null, '한 번에 실음'), h('b', null, `${fy.cap}대`)),
           h('div', null, h('small', null, '지금 실린 트럭'), h('b', null, `${fy.cargo.length}대`)),
           h('div', null, h('small', null, '운항 횟수'), h('b', null, `${fy.trips}회`))),
-        h('p', { class: 'note', key: 'nt' }, '트럭은 터미널에서 줄을 서서 배를 기다립니다. 배가 작으면 줄이 큰길까지 밀립니다.', a < 0 ? '' : ''),
+        h('p', { class: 'note', key: 'nt' }, '트럭은 터미널에서 줄을 서서 배를 기다립니다. 배가 작으면 줄이 큰길까지 밀립니다.'),
         h('button', { class: 'btn up', key: 'up', disabled: g.money < price || fy.cap >= 120, onclick: () => { if (g.buyFerry(fy)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); } }, h('span', null, `카페리 증편 ${fy.cap} → ${fy.cap + 10}대`), h('span', { class: 'price' }, fmtWon(price)))),
     ];
   }
@@ -738,7 +734,7 @@ export class UI {
         h('p', { class: 'note', key: 'intro' }, '지도에 보라색 점선으로 표시된 도로입니다. 건설하면 트럭이 알아서 더 빠른 길로 다닙니다.'),
         avail.length ? h('div', { class: 'cards', key: 'c' }, avail.map((p) => {
           const price = g.projectPrice(p);
-          return h('div', { class: `card${p.built ? ' done' : g.money >= price ? ' can' : ''}`, key: p.id }, ico(p.kind === 'bridge' ? 'ship' : 'build'), h('div', null, h('h4', null, p.name, h('span', null, `${Math.round(p.km)}km`)), h('p', null, p.desc),
+          return h('div', { class: `card${p.built ? ' done' : g.money >= price ? ' can' : ''}`, key: p.id }, ico(p.kind === 'bridge' ? 'bridge' : 'bypass'), h('div', null, h('h4', null, p.name, h('span', null, `${Math.round(p.km)}km`)), h('p', null, p.desc),
             p.built ? h('span', { class: 'chip ok' }, '개통 완료') : h('div', { class: 'btn-row' },
               h('button', { class: 'btn', onclick: () => { this.closeModal(); this.showProject(p); } }, '위치 보기'),
               h('button', { class: 'btn buy', disabled: g.money < price, onclick: () => { if (g.buildProject(p)) { this.sound.fanfare(); this.r.baseDirty = true; this.renderModal(); this.renderTop(); } } }, h('span', { class: 'price' }, fmtWon(price))))));
@@ -905,4 +901,3 @@ export class UI {
   }
 }
 
-void svgStr; void LANE_W; void REGION_GOAL;

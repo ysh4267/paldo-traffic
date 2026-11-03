@@ -233,8 +233,7 @@ export class Node {
     this.req = [];
     this.site = null;
     // 신호
-    this.phases = null;
-    this.phase = 0;
+    this.allow = null;
     this.phaseT = 0;
     this.clearT = 0;
     // 회전교차로

@@ -1,5 +1,5 @@
 // 게임 상태와 규칙. DOM이 없어 Node에서도 돌아간다 (밸런스 봇이 같은 코드를 쓴다).
-import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES, V0, SHIP_SPEED } from '../sim/network.js';
+import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES } from '../sim/network.js';
 import { Traffic } from '../sim/traffic.js';
 import {
   GOODS, TIER_WEIGHT, BASE_RATE, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE,
@@ -620,8 +620,6 @@ export class Game {
     v.retire = true;
     this.money += (v.price || 0) * 0.5;
     route.trucks.splice(route.trucks.indexOf(v), 1);
-    route.retiring = (route.retiring || 0) + 1;
-    v.path = v.path || route.pathBack;
     return true;
   }
 
@@ -807,8 +805,7 @@ export class Game {
   // ── 메인 ──────────────────────────────────────────────
   tick(dt) {
     this.time += dt;
-    const speedScale = 1;
-    this.traffic.step(dt * speedScale);
+    this.traffic.step(dt);
     this.econT += dt;
     while (this.econT >= ECON_DT) {
       this.stepEconomy(ECON_DT);

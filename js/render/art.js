@@ -91,6 +91,8 @@ export const ICONS = {
   star: S(`<path d="M20 3l5.200 11 12 1.600-8.800 8.300 2.300 12L20 30l-10.700 5.900 2.300-12-8.800-8.300 12-1.600z" fill="#f6b01e"/>`),
   home: S(`<path d="M20 4 3 19h5v17h9V25h6v11h9V19h5z" fill="currentColor"/>`),
   ship: S(`<path d="M2 24h36l-5 11H7z" fill="#fff"/><rect x="12" y="15" width="16" height="9" fill="#fff"/><rect x="17" y="8" width="6" height="7" fill="#fff"/>`),
+  bridge: S(`<path d="M1 33c3-2 5-2 8 0s5 2 8 0 5-2 8 0 5 2 7 0 4-1 7 0v6H1z" fill="#1f9ec0"/><rect x="11" y="4" width="3.5" height="29" fill="#54606a"/><rect x="26" y="4" width="3.5" height="29" fill="#54606a"/><rect x="1" y="24" width="38" height="3.5" fill="#23282c"/><path d="M12.7 6 2 24M12.700 6l8 18M12.700 12 6 24M12.700 12l4.500 12M27.800 6l-8 18M27.800 6 38 24M27.800 12l-4.500 12M27.800 12 34 24" stroke="#f08a24" stroke-width="1.100" fill="none"/>`),
+  bypass: S(`<path d="M5 37C5 22 35 20 35 3" fill="none" stroke="#23282c" stroke-width="10"/><path d="M5 37C5 22 35 20 35 3" fill="none" stroke="#f6b01e" stroke-width="7"/><path d="M5 37C5 22 35 20 35 3" fill="none" stroke="#fff" stroke-width="1.400" stroke-dasharray="4 4"/>`),
 };
 
 // 고속도로·국도 노선 방패 (실제 표지 형태). 번호를 받아 SVG 문자열을 만든다.

@@ -15,7 +15,7 @@ Rischer Kriebl의 [Incremental Traffic](https://store.steampowered.com/app/54759
 
 ## 실행
 
-빌드 과정이 없는 순수 ES 모듈 프로젝트입니다. 아무 정적 서버로 열면 됩니다.
+빌드 과정이 없는 순수 ES 모듈 프로젝트입니다. 아무 정적 서버로 열면 됩니다. GitHub Pages는 `main` 브랜치 루트를 그대로 게시하면 됩니다.
 
 ```bash
 node tools/serve.mjs 8765
@@ -30,7 +30,7 @@ node tools/serve.mjs 8765
 | `js/render/` | 캔버스 렌더링과 벡터 아트 |
 | `js/ui/` | 패널, 창, 튜토리얼, 효과음 |
 | `data/korea.json` | 가공된 지도 데이터 |
-| `tools/` | 지도 데이터 빌드, 밸런스 봇, 교차로 처리량 측정 |
+| `tools/` | 지도 데이터 빌드, 밸런스 봇, 교차로 처리량 측정, 노선 점검 |
 
 지도 데이터를 다시 만들려면 `node tools/fetch-osm.mjs`로 원본을 받고 `node tools/build-map.mjs`를 실행합니다. 원본은 `.cache/raw/`에 저장되며 저장소에는 올리지 않습니다.
 

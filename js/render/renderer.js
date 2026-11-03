@@ -1,6 +1,6 @@
 // 지도·트럭·교차로 캔버스 렌더링. 지도 바탕은 캐시하고, 움직이는 것만 매 프레임 그린다.
-import { laneOffset, LANE_W, MEDIAN, ROAD_SPEED } from '../sim/network.js';
-import { GOODS, TRUCKS, fmtWon, TIER_WEIGHT } from '../game/defs.js';
+import { laneOffset, LANE_W, MEDIAN } from '../sim/network.js';
+import { GOODS } from '../game/defs.js';
 import { sprite, setSpriteReadyCallback } from './art.js';
 
 export const PALETTES = {
@@ -292,8 +292,8 @@ export class Renderer {
   }
 
   drawDokdo(b, px) {
-    const d = this.game.data.dokdo, u = this.game.data.ulleung;
-    b.fillStyle = this.game.regions[2].unlocked ? this.pal.terrain[2] : this.pal.foreign;
+    const d = this.game.data.dokdo;
+    b.fillStyle = this.pal.terrain[2];
     b.strokeStyle = this.pal.coast;
     b.lineWidth = 0.8 * px;
     for (const [x, y, r] of [[d.x - 0.22, d.y + 0.02, 0.2], [d.x + 0.22, d.y - 0.04, 0.24]]) {
@@ -302,7 +302,6 @@ export class Renderer {
       b.fill();
       b.stroke();
     }
-    void u;
   }
 
   roadInView(r, m = 0) {
@@ -809,7 +808,6 @@ export class Renderer {
       ctx.fillRect(-L - 0.01, W / 2 - 0.05, 0.035, 0.05);
     }
     ctx.restore();
-    void k;
   }
 
   drawFerries(ctx) {
@@ -980,7 +978,6 @@ export class Renderer {
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       } else if (sel.type === 'approach') {
         const e = sel.edge;
-        const n = sel.node;
         const tmp = [0, 0, 0, 0];
         e.sample(Math.max(0, e.L - Math.max(1.8, 26 * cam.k)), MEDIAN + (LANE_W * e.road.lanes) / 2, tmp);
         const x0 = cam.sx(tmp[0]), y0 = cam.sy(tmp[1]);
@@ -997,7 +994,6 @@ export class Renderer {
         ctx.lineTo(x1 + Math.cos(a - 2.4) * 8, y1 + Math.sin(a - 2.4) * 8);
         ctx.closePath();
         ctx.fill();
-        void n;
       }
       ctx.globalAlpha = 1;
     };
@@ -1648,4 +1644,3 @@ function shade(hex, amt) {
   return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 
-void ROAD_SPEED; void TRUCKS; void fmtWon; void TIER_WEIGHT;
