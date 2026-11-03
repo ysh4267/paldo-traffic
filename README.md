@@ -10,6 +10,7 @@ Rischer Kriebl의 [Incremental Traffic](https://store.steampowered.com/app/54759
 
 - 도로 위의 차는 전부 내 트럭입니다. 트럭을 늘리면 돈을 벌지만 그만큼 길이 막힙니다.
 - 차선 단위로 움직이는 시뮬레이션이라 정체, 꼬리물기, 교착이 저절로 생깁니다.
+- 1톤 트럭 ₩2,200만, 신호등 ₩7,300만, 인천대교 ₩2.38조처럼 금액은 실제 시세와 공사비를 바탕으로 했습니다.
 - 양보·정지 표지, 신호등, 회전교차로, 입체교차로, 차로 추가로 정체를 풉니다.
 - 충북에서 시작해 충남, 경북, 전북, 전남, 제주, 경남, 강원, 수도권 순서로 권역이 열립니다.
 - 사과밭에서 시작한 물류가 제철소, 자동차공장, 조선소, 반도체공장, 수출항까지 이어집니다.
@@ -30,9 +31,10 @@ node tools/serve.mjs 8765
 | `js/sim/` | 도로망과 차선 기반 교통 시뮬레이션 (DOM 없음) |
 | `js/game/` | 화물, 트럭, 연구, 권역 진행, 저장 |
 | `js/render/` | 캔버스 렌더링과 벡터 아트 |
-| `js/ui/` | 패널, 창, 튜토리얼, 효과음 |
+| `js/ui/` | 패널, 창, 튜토리얼, 효과음과 배경음 재생 |
+| `audio/` | 배경음 |
 | `data/korea.json` | 가공된 지도 데이터 |
-| `tools/` | 지도 데이터 빌드, 밸런스 봇, 교차로 처리량 측정, 노선 점검 |
+| `tools/` | 지도 데이터 빌드, 밸런스 봇, 교차로 처리량 측정, 노선 점검, 생산 사슬 점검 |
 
 지도 데이터를 다시 만들려면 `node tools/fetch-osm.mjs`로 원본을 받고 `node tools/build-map.mjs`를 실행합니다. 원본은 `.cache/raw/`에 저장되며 저장소에는 올리지 않습니다.
 
@@ -45,4 +47,36 @@ node tools/serve.mjs 8765
 - 주변 해안선: [Natural Earth](https://www.naturalearthdata.com/) (퍼블릭 도메인)
 - 지형: [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen, SRTM 등)
 
-거점의 특산물과 산업 입지는 실제 지역을 참고했지만, 생산량과 운임은 게임용으로 만든 값입니다.
+거점의 특산물과 산업 입지는 실제 지역을 참고했지만, 생산량은 게임용으로 만든 값입니다.
+
+## 배경음
+
+[We Drove All Night](https://opengameart.org/content/we-drove-all-night-game-soundtrack) by Holizna, CC0 (퍼블릭 도메인). 원본 WAV를 128kbps MP3로 변환하고 1dB 낮췄습니다. CC0라 표기 의무는 없지만 만든 사람을 밝혀 둡니다. 효과음은 코드로 합성합니다.
+
+## 금액 기준
+
+금액은 실제 값을 바탕으로 잡되, 게임이 굴러가도록 일부를 조정했습니다.
+
+| 항목 | 게임 금액 | 근거 |
+| --- | --- | --- |
+| 1톤 트럭 | ₩2,200만 | [포터 II 2026](https://www.hyundaimotorgroup.com/ko/news/CONT0000000000196277) ₩2,152만부터 |
+| 5톤 트럭 | ₩7,500만 | 5톤급 카고 ₩5,500만~₩7,000만대 |
+| 25톤 트레일러, 특송 윙바디 | ₩2.8억, ₩1.5억 | 추정값 (공식 가격을 확인하지 못함) |
+| 과일, 농산물, 수산물 | 톤당 ₩600만, ₩300만, ₩650만 | 도매가 ([사과](https://kbmaeil.com/article/202403130387345), [쌀](https://www.atfis.or.kr/fip/front/M000000289/stats/kamisWhole.do), [고등어](https://www.seafood.no/contentassets/9a6e769b1f4d4c788768d96d2ae9f8b2/03.-seungpyo-hong---kmi---mackerel-supply-demand-and-price-trend-analysis-1.pdf)) |
+| 원유, 철강, 화학소재 | 톤당 ₩75만, ₩90만, ₩150만 | [나프타](https://www.ceicdata.com/en/korea/raw-material-prices), [열연](https://www.procurementresource.com/ko/resource-center/hot-rolled-coil-price-trends) 시세 수준 |
+| 자동차 | 톤당 ₩3,000만 | [수출 단가](https://www.dailian.co.kr/news/view/1046397/)와 신차 가격 수준 |
+| 가공식품, 가구, 부품, 가전, 선박 블록, 반도체 | 톤당 ₩800만~₩10억 | 소매가와 건조가에서 어림한 값 |
+| 신호등 | ₩7,300만 | [교차로당 ₩7,300만](https://m.go.seoul.co.kr/news/2012/04/19/20120419015024)~[₩1억](https://www.kukinews.com/article/view/kuk200906220096) |
+| 회전교차로 | ₩3.5억 | [강동구 사례](https://gangdong.go.kr/web/newportal/press/3273) 등 |
+| 입체교차로 | ₩500억 | 실제 IC 사업비 ₩127억~₩996억 ([대구·경북](https://m.go.seoul.co.kr/news/2026/05/15/20260515019008), [동용인](https://www.heraldk.com/article/2025121119512754908)) |
+| 카페리 증편 | ₩680억부터 | [2만7천톤급 수주 금액](https://news.mtn.co.kr/news-detail/2018091813492080745) |
+| 대교, 고속도로 | 실제 총사업비 | 아래 목록 |
+
+실제 값에서 일부러 벗어난 것은 다음과 같습니다.
+
+- **값싼 벌크 화물**: 원목, 석회석, 철광석, 시멘트, 목재는 실제 시세(톤당 ₩2만~₩60만)로는 트럭값을 벌 수 없어 3~20배 올렸습니다.
+- **차로 추가**: 고속도로 1km당 ₩50억, 국도 ₩15억으로, 실제([회덕–비룡 확장 ₩129억/km](https://eiec.kdi.re.kr/epic_txt/1999/R9909027.HWP))의 절반 이하입니다. 실제 값으로는 초중반에 차로를 전혀 늘릴 수 없었습니다.
+- **연구비, 생산 증설비**: 실제 금액이 따로 없는 항목이라 단계별 수입에 맞춰 정했습니다.
+- **수익**: 운임이 아니라 싣고 간 화물의 납품 대금입니다. 실제 운임으로는 트럭값을 벌기까지 수백 번을 달려야 합니다.
+
+대교와 고속도로 총사업비: [인천대교](https://www.molit.go.kr/USR/policyTarget/dtl.jsp?idx=148) ₩2.38조, [거가대교](https://knnews.co.kr/news/articleView.php?idxno=995166) ₩1.98조, 이순신대교(여수산단 진입도로 포함) ₩1.07조, [서해대교](https://en.wikipedia.org/wiki/Seohae_Bridge) ₩6,700억, [서울양양](https://mobile.newsis.com/view/NISX20170629_0014969338) ₩2.37조, [상주영천](https://m.go.seoul.co.kr/news/2017/06/19/20170619500131) ₩2.15조, [순천완주](https://m.go.seoul.co.kr/news/2011/01/26/20110126015010) ₩2.25조, [서울–세종](https://m.go.seoul.co.kr/news/2016/09/03/20160903006014) 약 ₩10조, 부산외곽순환 ₩2.33조, 함양울산 ₩7.46조(세 구간 합), [새만금 방조제](https://www.mpva.go.kr/isnc/contents.do?key=622) ₩2.9조. 평택제천(₩2.5조)과 수도권 제1·2순환(₩3조, ₩10조)은 사업비를 찾지 못해 비슷한 노선으로 추정했고, 게임 안에도 추정이라고 적어 두었습니다.

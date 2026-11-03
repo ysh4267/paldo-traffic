@@ -1,7 +1,7 @@
 // 화면 UI 전체: 상단 안내판, 도구 독, 정보 패널, 창, 알림
 import { h, ico, raw, patch } from './dom.js';
 import { iconHtml, routeShield } from '../render/art.js';
-import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, TIER_NAME, fmtWon, fmtKo, fmtTon, fmtTime, josa } from '../game/defs.js';
+import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, TIER_NAME, fmtWon, fmtKo, fmtTon, fmtTime, josa, PROJECT_COST, LANE_PRICE_PER_KM } from '../game/defs.js';
 
 export const TOOLS = [
   { id: 'select', icon: 't_select', name: '선택', key: '1', desc: '거점과 교차로, 도로를 눌러 자세히 봅니다.' },
@@ -89,6 +89,7 @@ export class UI {
       if (e.key === ' ') { e.preventDefault(); this.app.setSpeed(this.app.speed === 0 ? (this.app.lastSpeed || 1) : 0); }
       if (e.key === 'r' || e.key === 'R') this.openModal('research');
       if (e.key === 'b' || e.key === 'B') this.openModal('build');
+      if (e.key === 'm' || e.key === 'M') this.setMusic(!this.sound.musicOn);
     });
   }
 
@@ -243,6 +244,14 @@ export class UI {
     if (this.modalName && this.modalName !== 'welcome' && this.modalName !== 'offline' && this.modalName !== 'settings') this.renderModal();
   }
 
+  setMusic(on) {
+    this.sound.unlock();
+    this.sound.setMusicOn(on);
+    this.app.saveSettings();
+    this.renderTop();
+    if (this.modalName === 'settings') this.renderModal();
+  }
+
   renderTop() {
     const g = this.game, app = this.app;
     const ms = this.lastMoving || { stopped: 0, onRoad: 0 };
@@ -256,7 +265,7 @@ export class UI {
       h('div', { class: 'stat money', 'data-tip': '보유 자금' }, h('small', null, '자금'), h('strong', null, fmtWon(g.money))),
       h('div', { class: 'stat', 'data-tip': '최근 수익을 1분 기준으로 환산한 값입니다' }, h('small', null, '분당 수익'), h('strong', null, fmtWon(g.income * 60))),
       h('div', { class: 'stat', 'data-tip': '운행 중인 전체 트럭 수' }, h('small', null, '트럭'), h('strong', null, `${g.truckCount}대`)),
-      h('div', { class: `stat optional${g.onTimeRate < 0.75 ? ' bad' : ''}`, 'data-tip': '제시간에 도착한 배송 비율입니다. 정시 도착은 운임 보너스를 받고, 크게 늦으면 깎입니다.' }, h('small', null, '정시율'), h('strong', null, `${Math.round(g.onTimeRate * 100)}%`)),
+      h('div', { class: `stat optional${g.onTimeRate < 0.75 ? ' bad' : ''}`, 'data-tip': '제시간에 도착한 배송 비율입니다. 정시에 도착하면 납품 대금에 보너스가 붙고, 크게 늦으면 깎입니다.' }, h('small', null, '정시율'), h('strong', null, `${Math.round(g.onTimeRate * 100)}%`)),
       h('div', { class: `stat optional${stoppedShare > 0.35 ? ' bad' : ''}`, 'data-tip': '도로 위 트럭 중 멈춰 있는 대수입니다' }, h('small', null, '정체'), h('strong', null, `${ms.stopped}대`)),
       h('div', { class: 'bar-spacer' }),
       h('div', { class: 'speed' },
@@ -265,6 +274,7 @@ export class UI {
       h('div', { class: 'menu' },
         h('button', { onclick: () => this.openModal('research'), 'data-tip': '연구 (R)' }, ico('research'), h('span', null, '연구'), researchReady && h('i', { class: 'dot' })),
         h('button', { onclick: () => this.openModal('build'), 'data-tip': '우회도로·대교 건설 (B)' }, ico('build'), h('span', null, '건설'), buildReady && h('i', { class: 'dot' })),
+        h('button', { onclick: () => this.setMusic(!this.sound.musicOn), 'data-tip': this.sound.musicOn ? '배경음 끄기 (M)' : '배경음 켜기 (M)', 'aria-label': '배경음', 'aria-pressed': String(this.sound.musicOn) }, ico(this.sound.musicOn ? 'sound' : 'mute')),
         h('button', { onclick: () => this.openModal('settings'), 'data-tip': '설정과 저장', 'aria-label': '설정' }, ico('gear'))),
     ]);
   }
@@ -298,7 +308,7 @@ export class UI {
         h('span', { class: 'route' }, `전국 물류망 붐 ${g.endless + 1}단계`),
         h('div', { class: 'track' }, h('div', { class: 'fill', style: `width:${(frac * 100).toFixed(1)}%` })),
         h('span', null, `${Math.floor(frac * 100)}%`),
-        h('span', { class: 'next' }, `운임 +${Math.round((g.boomMult() - 1) * 100)}%`),
+        h('span', { class: 'next' }, `납품가 +${Math.round((g.boomMult() - 1) * 100)}%`),
       ];
     } else {
       const next = g.regions[reg.index + 1];
@@ -471,9 +481,9 @@ export class UI {
       const b = cur < 5 ? need[cur + 1] * scale * Math.pow(1.5, s.stage) : a;
       const f = cur < 5 ? (s.growth - a) / (b - a) : 1;
       kids.push(h('div', { class: 'meter', key: 'grow' }, h('span', { class: 'label' }, '도시 성장'), h('div', { class: 'track' }, h('div', { class: 'fill', style: `width:${(Math.min(1, f) * 100).toFixed(1)}%` })), h('span', { class: 'val' }, cur < 5 ? CITY_STAGE_NAME[cur + 1] : '최대')));
-      kids.push(h('p', { class: 'note', key: 'g2' }, `인구 약 ${s.pop}만 명. 지금 납품 운임 `, h('b', null, `+${s.cityStage * 8}%`), ' 납품할수록 도시가 커지고 운임이 오릅니다.'));
+      kids.push(h('p', { class: 'note', key: 'g2' }, `인구 약 ${s.pop}만 명. 지금 납품가 `, h('b', null, `+${s.cityStage * 8}%`), ' 납품할수록 도시가 커지고 납품가가 오릅니다. 시멘트는 도시를 5배 빨리 키웁니다.'));
     }
-    if (s.kind === 'dokdo') kids.push(h('p', { class: 'note', key: 'dok' }, '독도 경비대에 보급품을 보내면 운임을 6배로 받습니다. 울릉도를 거쳐 뱃길로 갑니다.'));
+    if (s.kind === 'dokdo') kids.push(h('p', { class: 'note', key: 'dok' }, '독도 경비대에 보급품을 보내면 납품가를 6배로 받습니다. 울릉도를 거쳐 뱃길로 갑니다.'));
     kids.push(h('div', { class: 'chain', key: 'acc' }, [...s.accepts].filter((q) => s.isCity || s.kind === 'port').map((q) => this.goodsPill(q))));
     const lines = s.routesIn.filter((q) => q.trucks.length).sort((a, b) => b.rate - a.rate).slice(0, 6);
     kids.push(h('div', { class: 'kv', key: 'kv' }, h('div', null, h('small', null, '누적 납품'), h('b', null, fmtTon(s.delivered))), h('div', null, h('small', null, '들어오는 노선'), h('b', null, `${lines.length}개`)), h('div', null, h('small', null, '배치 트럭'), h('b', null, `${s.routesIn.reduce((sum, q) => sum + q.trucks.length, 0)}대`))));
@@ -516,6 +526,7 @@ export class UI {
       }, label))));
     }
     if (!routes.length) kids.push(h('p', { class: 'note', key: 'nor' }, '아직 이 화물을 받아줄 곳이 없습니다. 권역을 더 개발하면 열립니다.'));
+    if (routes.length && GOODS[s.goods].growth) kids.push(h('p', { class: 'note', key: 'grow' }, `값은 싸지만 도시에 납품하면 도시가 ${GOODS[s.goods].growth}배 빨리 자랍니다.`));
     for (const q of routes) {
       const cap = g.truckCap(TRUCKS[m]);
       const trip = q.perTon * cap * (1 + g.upg.pay * 0.14);
@@ -670,7 +681,7 @@ export class UI {
         h('div', null, h('small', null, '제한 속도'), h('b', null, `${r.kind === 'x' ? 100 : r.kind === 'n' ? 80 : 60}km/h`))),
       h('div', { class: 'sec', key: 'flow' }, h('h3', null, '방향별 혼잡도'), dirRow(r.fwd), dirRow(r.bwd)),
       h('div', { class: 'sec', key: 'lane' }, h('h3', null, '확장'),
-        canAdd ? h('button', { class: 'btn buy', disabled: g.money < price, onclick: () => { if (g.addLane(r)) { this.sound.place(); this.r.baseDirty = true; this.renderInspector(true); } else this.sound.deny(); } }, h('span', null, `왕복 ${r.lanes * 2} → ${r.lanes * 2 + 2}차로`), h('span', { class: 'price' }, fmtWon(price))) : h('p', { class: 'note' }, '최대 차로입니다.'),
+        canAdd ? h('button', { class: 'btn buy', disabled: g.money < price, 'data-tip': `1km당 ${fmtWon(LANE_PRICE_PER_KM[r.kind])} 기준입니다. 차로가 늘수록 비싸지고, 땅값이 비싼 지역은 보상비가 더 듭니다.`, onclick: () => { if (g.addLane(r)) { this.sound.place(); this.r.baseDirty = true; this.renderInspector(true); } else this.sound.deny(); } }, h('span', null, `왕복 ${r.lanes * 2} → ${r.lanes * 2 + 2}차로`), h('span', { class: 'price' }, fmtWon(price))) : h('p', { class: 'note' }, '최대 차로입니다.'),
         h('p', { class: 'note', key: 'nt' }, '차로가 늘면 줄을 더 많이 세울 수 있고, 좌회전과 직진 트럭이 서로 막지 않습니다.'))),
     ];
   }
@@ -731,10 +742,10 @@ export class UI {
     return h('div', { class: 'dialog', role: 'dialog', 'aria-label': '건설' },
       this.head('blue', ico('build'), '우회도로와 대교', `보유 자금 ${fmtWon(g.money)}`, () => this.closeModal()),
       h('div', { class: 'p-body' },
-        h('p', { class: 'note', key: 'intro' }, '지도에 보라색 점선으로 표시된 도로입니다. 건설하면 트럭이 알아서 더 빠른 길로 다닙니다.'),
+        h('p', { class: 'note', key: 'intro' }, '지도에 보라색 점선으로 표시된 도로입니다. 금액은 실제 총사업비 기준입니다. 건설하면 트럭이 알아서 더 빠른 길로 다닙니다.'),
         avail.length ? h('div', { class: 'cards', key: 'c' }, avail.map((p) => {
           const price = g.projectPrice(p);
-          return h('div', { class: `card${p.built ? ' done' : g.money >= price ? ' can' : ''}`, key: p.id }, ico(p.kind === 'bridge' ? 'bridge' : 'bypass'), h('div', null, h('h4', null, p.name, h('span', null, `${Math.round(p.km)}km`)), h('p', null, p.desc),
+          return h('div', { class: `card${p.built ? ' done' : g.money >= price ? ' can' : ''}`, key: p.id }, ico(p.kind === 'bridge' ? 'bridge' : 'bypass'), h('div', null, h('h4', null, p.name, h('span', null, `${Math.round(p.km)}km${PROJECT_COST[p.id].est ? ' · 사업비 추정' : ''}`)), h('p', null, p.desc),
             p.built ? h('span', { class: 'chip ok' }, '개통 완료') : h('div', { class: 'btn-row' },
               h('button', { class: 'btn', onclick: () => { this.closeModal(); this.showProject(p); } }, '위치 보기'),
               h('button', { class: 'btn buy', disabled: g.money < price, onclick: () => { if (g.buildProject(p)) { this.sound.fanfare(); this.r.baseDirty = true; this.renderModal(); this.renderTop(); } } }, h('span', { class: 'price' }, fmtWon(price))))));
@@ -755,7 +766,9 @@ export class UI {
       this.head('dark', ico('gear'), '설정', null, () => this.closeModal()),
       h('div', { class: 'p-body' },
         h('div', { class: 'sec', key: 'snd' }, h('h3', null, '소리'),
-          h('label', { class: 'field' }, '효과음 크기', h('input', { id: 'set-vol', type: 'range', min: 0, max: 1, step: 0.05, value: snd.volume, oninput: (e) => { snd.setVolume(Number(e.target.value)); app.saveSettings(); snd.click(); } }))),
+          h('label', { class: 'field' }, '효과음 크기', h('input', { id: 'set-vol', type: 'range', min: 0, max: 1, step: 0.05, value: snd.volume, oninput: (e) => { snd.setVolume(Number(e.target.value)); app.saveSettings(); snd.click(); } })),
+          h('label', { class: 'field' }, '배경음 크기', h('input', { id: 'set-music', type: 'range', min: 0, max: 1, step: 0.05, value: snd.musicVolume, oninput: (e) => { snd.setMusicVolume(Number(e.target.value)); app.saveSettings(); } })),
+          h('label', { class: 'field' }, '배경음 켜기', h('input', { id: 'set-music-on', type: 'checkbox', checked: snd.musicOn, onchange: (e) => this.setMusic(e.target.checked) }))),
         h('div', { class: 'sec', key: 'map' }, h('h3', null, '지도'),
           h('div', { class: 'btn-row' },
             h('button', { class: `btn${this.r.palName === 'day' ? ' go' : ''}`, onclick: () => { this.r.setPalette('day'); app.saveSettings(); this.renderModal(); } }, '주간 지도'),
@@ -769,9 +782,9 @@ export class UI {
             ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, '정말 처음부터'))
             : h('button', { class: 'btn danger', onclick: () => { this.confirmReset = true; this.renderModal(); } }, '처음부터 다시 시작')),
         h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
-          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · Esc: 취소')),
+          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · M: 배경음 · Esc: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
-          h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth, 지형 Terrain Tiles. 그림은 모두 코드로 그린 벡터입니다.'))));
+          h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth, 지형 Terrain Tiles. 그림은 모두 코드로 그린 벡터입니다.', h('br'), '배경음: Holizna, We Drove All Night (CC0, OpenGameArt). 효과음은 코드로 합성했습니다.', h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
   }
 
   welcomeDialog() {
@@ -779,7 +792,7 @@ export class UI {
       h('div', { class: 'welcome-hero' }, h('h1', null, '팔도 트래픽'), h('p', null, '충주 사과밭의 용달 한 대로 시작해 전국 물류망을 완성하세요. 도로 위의 차는 전부 당신의 트럭입니다. 막히면 당신 탓입니다.')),
       h('div', { class: 'p-body' },
         h('div', { class: 'sec' },
-          h('div', { class: 'list-row', style: 'cursor:default' }, ico('truck_hauler'), h('div', { class: 't' }, h('b', null, '트럭을 사서 화물을 나릅니다'), h('small', null, '배송할 때마다 운임이 들어옵니다')), h('span')),
+          h('div', { class: 'list-row', style: 'cursor:default' }, ico('truck_hauler'), h('div', { class: 't' }, h('b', null, '트럭을 사서 화물을 나릅니다'), h('small', null, '배송할 때마다 납품 대금이 들어옵니다')), h('span')),
           h('div', { class: 'list-row', style: 'cursor:default' }, ico('t_signal'), h('div', { class: 't' }, h('b', null, '트럭이 늘면 길이 막힙니다'), h('small', null, '양보 표지, 신호등, 차로 추가로 풉니다')), h('span')),
           h('div', { class: 'list-row', style: 'cursor:default' }, ico('city'), h('div', { class: 't' }, h('b', null, '도시가 자라고 권역이 열립니다'), h('small', null, '충북에서 수도권까지, 뱃길로 제주와 독도까지')), h('span'))),
         h('button', { class: 'btn go', style: 'min-height:46px;font-size:16px', onclick: () => { this.sound.unlock(); this.closeModal(); this.app.startFresh(); } }, '충청북도에서 시작'),
@@ -791,7 +804,7 @@ export class UI {
     return h('div', { class: 'dialog small', role: 'dialog', 'aria-label': '돌아오셨습니다' },
       this.head('', ico('truck'), '다녀오셨습니까', `${fmtTime(d.seconds)} 동안 비웠습니다`, () => this.closeModal()),
       h('div', { class: 'p-body' }, h('p', { class: 'note' }, '자리를 비운 사이에도 트럭은 달렸습니다. 다만 정체를 풀어 줄 사람이 없어 평소 수익의 절반만 벌었습니다.'),
-        h('div', { class: 'kv' }, h('div', { style: 'grid-column:1/-1' }, h('small', null, '벌어들인 운임'), h('b', { style: 'font-size:26px' }, fmtWon(d.earned)))),
+        h('div', { class: 'kv' }, h('div', { style: 'grid-column:1/-1' }, h('small', null, '벌어들인 금액'), h('b', { style: 'font-size:26px' }, fmtWon(d.earned)))),
         h('button', { class: 'btn go', onclick: () => this.closeModal() }, '운행 계속')));
   }
 
@@ -799,7 +812,7 @@ export class UI {
     const g = this.game;
     return h('div', { class: 'dialog small', role: 'dialog', 'aria-label': '전국 물류망 완성' },
       h('div', { class: 'welcome-hero' }, h('h1', null, '전국 물류망 완성'), h('p', null, `${fmtTime(g.time)} 만에 팔도를 모두 이었습니다. 트럭 ${g.truckCount}대가 누적 ${fmtTon(g.totalTons)}을 날랐습니다.`)),
-      h('div', { class: 'p-body' }, h('p', { class: 'note' }, '이제 붐 단계가 시작됩니다. 전국 납품 실적을 쌓을 때마다 운임이 15%씩 오릅니다. 얼마나 큰 물류망까지 막히지 않게 굴릴 수 있는지 끝까지 가 보세요.'),
+      h('div', { class: 'p-body' }, h('p', { class: 'note' }, '이제 붐 단계가 시작됩니다. 전국 납품 실적을 쌓을 때마다 납품가가 15%씩 오릅니다. 얼마나 큰 물류망까지 막히지 않게 굴릴 수 있는지 끝까지 가 보세요.'),
         h('button', { class: 'btn go', onclick: () => this.closeModal() }, '계속 운행')));
   }
 
@@ -892,7 +905,7 @@ export class UI {
     this._steps = [
       { title: '첫 트럭을 사 보세요', text: '지도에서 깜빡이는 충주 사과밭을 누르세요.', target: () => apple, done: () => (this.sel && this.sel.site === apple) || apple.routesOut.some((q) => q.trucks.length) },
       { title: '사과를 공장으로', text: '패널의 음성 식품공장 노선에서 노란 트럭 구매 버튼을 누르세요.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length > 0 },
-      { title: '운임이 들어옵니다', text: '트럭이 사과를 내려놓으면 돈이 들어옵니다. 돈이 모이면 트럭을 더 사세요. 창고 게이지가 빨개지면 트럭이 모자란다는 뜻입니다.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length >= 3 },
+      { title: '납품 대금이 들어옵니다', text: '트럭이 사과를 내려놓으면 돈이 들어옵니다. 돈이 모이면 트럭을 더 사세요. 창고 게이지가 빨개지면 트럭이 모자란다는 뜻입니다.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length >= 3 },
       { title: '이제 가공식품', text: '공장에 사과가 들어가면 가공식품이 쌓입니다. 음성 식품공장을 눌러 청주로 가는 트럭을 사세요. 값이 훨씬 비쌉니다.', target: () => food, done: () => foodRoutes().some((q) => q.trucks.length > 0) },
       { title: '납품하면 지역이 자랍니다', text: '위쪽 막대가 납품 실적입니다. 실적이 쌓이면 새 거점이 열리고, 다 채우면 다음 권역이 개통됩니다.', target: () => null, done: () => g.progress() >= 0.2 },
       { title: '길이 막히기 시작하면', text: '붉게 깜빡이는 교차로를 누르세요. 진입 방향에 양보 표지를 칠하면 나머지 방향이 멈추지 않고 지나갑니다. 연구에서 신호등도 배울 수 있습니다.', target: () => null, done: () => g.techs.has('signal') || g.progress() >= 0.6 || g.stage > 0 },

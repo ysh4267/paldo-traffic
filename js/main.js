@@ -118,9 +118,11 @@ class App {
     this.settings = {};
     try { this.settings = JSON.parse(store.get(SETTINGS_KEY)) || {}; } catch { this.settings = {}; }
     if (this.settings.vol !== undefined) this.sound.volume = this.settings.vol;
+    if (this.settings.music !== undefined) this.sound.musicVolume = this.settings.music;
+    if (this.settings.musicOn !== undefined) this.sound.musicOn = this.settings.musicOn;
   }
   saveSettings() {
-    store.set(SETTINGS_KEY, JSON.stringify({ vol: this.sound.volume, pal: this.renderer.palName }));
+    store.set(SETTINGS_KEY, JSON.stringify({ vol: this.sound.volume, music: this.sound.musicVolume, musicOn: this.sound.musicOn, pal: this.renderer.palName }));
   }
 
   setSpeed(v) {
@@ -249,7 +251,8 @@ class App {
     // 패널에서 누르는 동안 갱신을 멈춰 클릭을 보호한다
     const insp = document.getElementById('inspector');
     insp.addEventListener('pointerdown', () => { this.ui.pressing = true; });
-    window.addEventListener('pointerup', () => { this.ui.pressing = false; });
+    window.addEventListener('pointerup', () => { this.ui.pressing = false; this.sound.unlock(); });
+    window.addEventListener('keydown', () => this.sound.unlock());
     document.getElementById('ui').addEventListener('pointerdown', () => this.sound.unlock());
 
     // 확대 버튼
@@ -481,6 +484,7 @@ class App {
   }
 
   onVisibility() {
+    this.sound.setHidden(document.hidden);
     if (document.hidden) {
       this.setAway(true);
       this.save();

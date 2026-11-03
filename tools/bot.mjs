@@ -33,6 +33,8 @@ function bestModel(route) {
 // 한 번에 한 동작만 한다 (사람처럼)
 function act() {
   const useTools = MODE !== 'notools';
+  // 다음 연구비를 곧 모을 수 있으면 비싼 공사와 트럭을 잠시 미룬다
+  const saving = TECHS.find((t) => !g.techs.has(t.id) && g.techVisible(t) && t.cost < g.income * 240);
   // 1. 심각한 정체 먼저
   if (useTools) {
     for (const j of g.jams) {
@@ -43,18 +45,18 @@ function act() {
         continue;
       }
       if (n.control === 'auto') {
-        if (g.techs.has('interchange') && n.flow > 2.2 && g.money >= g.controlPrice(n, 'interchange')) { g.setControl(n, 'interchange'); return 'ic'; }
+        if (!saving && g.techs.has('interchange') && n.flow > 2.2 && g.money >= g.controlPrice(n, 'interchange')) { g.setControl(n, 'interchange'); return 'ic'; }
         if (g.techs.has('signal') && g.money >= g.controlPrice(n, 'signal')) { g.setControl(n, 'signal'); return 'sig'; }
         // 양보 표지로 임시 처방
         if (!n.inE.some((e) => e.sign) && !n.major.size) {
           const quiet = n.inE.filter((e) => e.road.open).sort((a, b) => a.count - b.count)[0];
           if (quiet && g.money >= g.signPrice(quiet, 1)) { g.setSign(quiet, 1); return 'yield'; }
         }
-      } else if (n.control === 'signal' && g.techs.has('interchange') && n.waiting > 12 && g.money >= g.controlPrice(n, 'interchange')) {
+      } else if (!saving && n.control === 'signal' && g.techs.has('interchange') && n.waiting > 12 && g.money >= g.controlPrice(n, 'interchange')) {
         g.setControl(n, 'interchange'); return 'ic2';
       }
       for (const e of n.inE) {
-        if (e.cong > 0.55 && g.canAddLane(e.road) && g.money >= g.lanePrice(e.road)) { g.addLane(e.road); return 'lane'; }
+        if (!saving && e.cong > 0.55 && g.canAddLane(e.road) && g.money >= g.lanePrice(e.road)) { g.addLane(e.road); return 'lane'; }
       }
       if (j.stuck > 50 && g.techs.has('tow') && g.money >= g.towPrice(n)) { g.tow(n); return 'tow'; }
     }
@@ -63,8 +65,6 @@ function act() {
   for (const t of TECHS) {
     if (!g.techs.has(t.id) && g.techVisible(t) && g.money >= t.cost) { g.buyTech(t.id); return 'tech'; }
   }
-  // 다음 연구비를 모으는 중이면 트럭을 잠시 멈춘다
-  const saving = TECHS.find((t) => !g.techs.has(t.id) && g.techVisible(t) && t.cost < g.income * 240);
   if (saving) return null;
   // 3. 트럭 (값비싼 화물 우선)
   const ms = g.movingStats();
@@ -76,8 +76,14 @@ function act() {
     if (!routes.length) continue;
     const cap = g.siteCap(s);
     if (s.stock > cap * 0.55 && !s.yard.length && !(congested && useTools)) {
+      // 원료가 모자란 공장부터 채워 상위 화물까지 사슬을 잇는다
+      const needy = routes.filter((q) => {
+        const c = q.to;
+        const i = c.inputs ? c.inputs.findIndex((l) => l.includes(q.goods)) : -1;
+        return i >= 0 && c.inBuf[i] < g.inputCap(c) * 0.5;
+      });
       const toGoal = routes.filter((q) => q.to.region === g.stage);
-      const pool = toGoal.length ? toGoal : routes;
+      const pool = needy.length ? needy : toGoal.length ? toGoal : routes;
       const unopened = pool.find((q) => !q.trucks.length);
       const r = unopened || pool.slice().sort((a, b) => a.trucks.length - b.trucks.length)[0];
       const m = bestModel(r);
@@ -136,5 +142,11 @@ const stat = { lanes: 0, signal: 0, roundabout: 0, interchange: 0 };
 for (const r of g.net.roads) if (r.lanes > (r.kind === 'x' ? 2 : 1)) stat.lanes++;
 for (const n of g.net.nodes) if (stat[n.control] !== undefined) stat[n.control]++;
 console.log('final', JSON.stringify(stat), 'acts', JSON.stringify(acts), 'maxTrucks', maxTrucks, 'routes open', [...g.routes.values()].filter((r) => r.trucks.length).length, '/', g.routes.size);
-console.log('sim speed:', (total / ((Date.now() - t0) / 1000)).toFixed(0), 'x, avg step', (stepMs / steps).toFixed(3), 'ms');
+const byGoods = {};
+for (const r of g.routes.values()) {
+  const q = (byGoods[r.goods] ||= { earned: 0, tons: 0, trucks: 0 });
+  q.earned += r.earned; q.tons += r.delivered; q.trucks += r.trucks.length;
+}
+console.log('화물별:', Object.entries(byGoods).sort((a, b) => b[1].earned - a[1].earned).map(([k, q]) => `${GOODS[k].name} ${fmtWon(q.earned)} ${Math.round(q.tons)}t ${q.trucks}대`).join(' | '));
+console.log('sim speed:',(total / ((Date.now() - t0) / 1000)).toFixed(0), 'x, avg step', (stepMs / steps).toFixed(3), 'ms');
 if (process.argv[5] === 'dump') dumpJams(g);

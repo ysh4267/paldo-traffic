@@ -2,14 +2,12 @@
 import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES } from '../sim/network.js';
 import { Traffic } from '../sim/traffic.js';
 import {
-  GOODS, TIER_WEIGHT, BASE_RATE, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE,
-  LANE_PRICE_PER_KM, PROJECT_PRICE_PER_KM, REGION_SCALE, CITY_ACCEPTS, PORT_ACCEPTS, AIR_ACCEPTS, DOKDO_ACCEPTS, fmtWon,
+  GOODS, TIER_WEIGHT, BASE_RATE, EXPAND_COST, BAY_COST, START_MONEY, TRUCK_STEP, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE,
+  LANE_PRICE_PER_KM, LANE_PRICE_MIN, LAND_FACTOR, PROJECT_COST, FERRY_PRICE, TOW_PRICE, CITY_ACCEPTS, PORT_ACCEPTS, AIR_ACCEPTS, DOKDO_ACCEPTS, fmtWon,
 } from './defs.js';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 const ECON_DT = 0.05;
-const TRUCK_K = 3.2;
-const TRUCK_G = 1.085;
 const CITY_STAGE_NEED = [0, 25, 110, 480, 2000, 9000];
 
 export class Site {
@@ -102,7 +100,7 @@ export class Game {
         if (p) { p.roads.push(r); p.km += r.len; }
       }
     }
-    this.money = opts.money ?? 62 * 10000;
+    this.money = opts.money ?? START_MONEY;
     this.stage = 0;
     this.routes = new Map();
     this.techs = new Set();
@@ -230,7 +228,7 @@ export class Game {
   // ── 생산 ──────────────────────────────────────────────
   siteRate(s) {
     if (!s.produces) return 0;
-    const base = BASE_RATE[s.tier] * Math.pow(1.55, s.stage);
+    const base = (GOODS[s.goods].rate ?? BASE_RATE[s.tier]) * Math.pow(1.55, s.stage);
     return base * Math.pow(1.38, s.level);
   }
   siteCap(s) { return Math.max(24, this.siteRate(s) * 70); }
@@ -238,12 +236,10 @@ export class Game {
 
   upgradeCost(s) {
     if (!s.produces) return Infinity;
-    const g = GOODS[s.goods];
-    return g.price * 9 * (1 + s.stage * 0.45) * Math.pow(1.72, s.level) * Math.pow(1.55, s.stage);
+    return EXPAND_COST[s.goods] * (1 + s.stage * 0.45) * Math.pow(1.72, s.level) * Math.pow(1.55, s.stage);
   }
   bayCost(s) {
-    const base = s.produces ? GOODS[s.goods].price : 12 * 10000;
-    return base * 7 * Math.pow(2.4, s.bays - 1) * Math.pow(1.55, s.stage);
+    return BAY_COST[s.produces ? s.tier : 0] * Math.pow(1.9, s.bays - 1) * Math.pow(1.55, s.stage);
   }
   buyUpgrade(s) {
     const c = this.upgradeCost(s);
@@ -436,12 +432,12 @@ export class Game {
     this.deliveries++;
     s.delivered += tons;
 
-    const weight = TIER_WEIGHT[g.tier];
+    const weight = g.weight ?? TIER_WEIGHT[g.tier];
     const pts = tons * weight;
     const reg = this.regions[s.region];
     reg.pts += pts;
     if (this.allUnlocked && this.progress() >= 1) this.endlessPts += pts;
-    if (s.isCity) this.growCity(s, pts);
+    if (s.isCity) this.growCity(s, pts * (g.growth || 1));
     this.floats.push({ x: s.x, y: s.y, text: '+' + fmtWon(pay), tag, t: 0, overflow });
     if (this.floats.length > 40) this.floats.shift();
     this.checkProgress();
@@ -518,6 +514,20 @@ export class Game {
       }
       if (best) this.ensureRoute(best.p, c);
     }
+    // 원료 칸이 하나라도 비면 공장이 아무것도 못 만드니, 칸마다 공급 노선을 하나는 잇는다
+    for (const c of avail) {
+      if (!c.inputs || !c.spurIn) continue;
+      for (const slot of c.inputs) {
+        if (c.routesIn.some((r) => r.valid !== false && slot.includes(r.goods))) continue;
+        let best = null;
+        for (const [p, { cands }] of trees) {
+          if (!slot.includes(p.goods)) continue;
+          const q = cands.find((x) => x.c === c);
+          if (q && (!best || q.km < best.km)) best = { p, km: q.km };
+        }
+        if (best) this.ensureRoute(best.p, c);
+      }
+    }
     this.recomputePaths();
   }
 
@@ -552,27 +562,26 @@ export class Game {
       r.dist = pathLength(pt);
       r.freeTime = treeOf(r.from).cost[r.to.spurIn.id];
       const g = GOODS[r.goods];
-      r.perTon = g.price * (0.55 + r.dist / 55);
+      r.perTon = g.price * (0.7 + r.dist / 150);
     }
   }
 
   truckPrice(route, modelIdx) {
-    const m = TRUCKS[modelIdx];
-    const count = route.trucks.length;
-    return route.perTon * m.priceF * TRUCK_K * Math.pow(TRUCK_G, count);
+    return TRUCKS[modelIdx].price * (1 + TRUCK_STEP * route.trucks.length);
   }
 
   // n대를 한꺼번에 살 때 값 (대수에 따라 값이 오른다)
   truckBatchPrice(route, modelIdx, n) {
-    const first = this.truckPrice(route, modelIdx);
-    return first * ((Math.pow(TRUCK_G, n) - 1) / (TRUCK_G - 1));
+    const c = route.trucks.length;
+    return TRUCKS[modelIdx].price * (n * (1 + TRUCK_STEP * c) + (TRUCK_STEP * n * (n - 1)) / 2);
   }
   // 지금 돈으로 살 수 있는 최대 대수 (최소 1)
   truckAffordable(route, modelIdx, limit = 200) {
     let n = 0;
     let price = this.truckPrice(route, modelIdx);
     let money = this.money;
-    while (n < limit && money >= price) { money -= price; price *= TRUCK_G; n++; }
+    const step = TRUCKS[modelIdx].price * TRUCK_STEP;
+    while (n < limit && money >= price) { money -= price; price += step; n++; }
     return n;
   }
 
@@ -640,12 +649,12 @@ export class Game {
   get truckCount() { return this.traffic.vehicles.size; }
 
   // ── 도구 가격과 적용 ───────────────────────────────────
-  regionScale(region) { return Math.pow(REGION_SCALE, Math.min(region, this.regions.length - 1)); }
+  landFactor(region) { return LAND_FACTOR[Math.min(region, LAND_FACTOR.length - 1)]; }
 
   lanePrice(road) {
     const per = LANE_PRICE_PER_KM[road.kind] || 0;
     const extra = road.lanes - BASE_LANES[road.kind] + 1;
-    return Math.max(8 * 10000, per * road.len * extra * extra * this.regionScale(road.region));
+    return Math.max(LANE_PRICE_MIN, per * road.len * extra * extra * this.landFactor(road.region));
   }
   canAddLane(road) { return road.kind !== 'f' && road.lanes < MAX_LANES[road.kind]; }
   addLane(road) {
@@ -658,9 +667,9 @@ export class Game {
   }
 
   controlPrice(node, control) {
-    const scale = this.regionScale(node.region);
     if (control === 'auto') return 0;
-    return (TOOL_PRICE[control] || 0) * scale;
+    if (control === 'signal') return TOOL_PRICE.signal;
+    return (TOOL_PRICE[control] || 0) * this.landFactor(node.region);
   }
   toolAllowed(tool) {
     if (tool === 'signal') return this.techs.has('signal');
@@ -679,7 +688,7 @@ export class Game {
   }
   buyRing2(node) {
     if (node.control !== 'roundabout' || node.ringLanes >= 2 || !this.techs.has('ring2')) return false;
-    const c = TOOL_PRICE.ring2 * this.regionScale(node.region);
+    const c = TOOL_PRICE.ring2 * this.landFactor(node.region);
     if (this.money < c) return false;
     this.money -= c;
     node.ringLanes = 2;
@@ -688,9 +697,8 @@ export class Game {
     return true;
   }
   signPrice(edge, sign) {
-    const node = this.net.nodes[edge.to];
     if (sign === 0) return 0;
-    return (sign === 1 ? TOOL_PRICE.yield : TOOL_PRICE.stop) * this.regionScale(node.region);
+    return sign === 1 ? TOOL_PRICE.yield : TOOL_PRICE.stop;
   }
   setSign(edge, sign) {
     const node = this.net.nodes[edge.to];
@@ -705,8 +713,7 @@ export class Game {
 
   projectAvailable(p) { return !p.built && p.stage <= this.stage && p.roads.length > 0; }
   projectPrice(p) {
-    const per = PROJECT_PRICE_PER_KM[p.kind] || PROJECT_PRICE_PER_KM.bypass;
-    return per * p.km * this.regionScale(p.stage);
+    return PROJECT_COST[p.id].cost;
   }
   buildProject(p) {
     if (!this.projectAvailable(p)) return false;
@@ -726,7 +733,7 @@ export class Game {
 
   // ── 뱃길 ──────────────────────────────────────────────
   ferryPrice(fy) {
-    return 4000 * 10000 * Math.pow(2.2, fy.level || 0) * this.regionScale(Math.max(fy.road.stage, 1));
+    return FERRY_PRICE * Math.pow(1.5, fy.level || 0);
   }
   buyFerry(fy) {
     const c = this.ferryPrice(fy);
@@ -771,7 +778,7 @@ export class Game {
   }
 
   // ── 구난 ──────────────────────────────────────────────
-  towPrice(node) { return 15 * 10000 * this.regionScale(node.region); }
+  towPrice() { return TOW_PRICE; }
   tow(node, free = false) {
     if (!free && (!this.techs.has('tow') || this.money < this.towPrice(node))) return 0;
     let moved = 0;
@@ -928,14 +935,15 @@ export class Game {
 
   static restore(data, save) {
     const g = new Game(data);
-    g.money = save.money;
+    const oldWon = (save.v || 1) < 2 ? 100 : 1;
+    g.money = save.money * oldWon;
     g.time = save.time;
     save.pts.forEach((p, i) => { if (g.regions[i]) g.regions[i].pts = p; });
     g.techs = new Set(save.techs);
     g.traffic.smartSignals = g.techs.has('smartsig');
     Object.assign(g.upg, save.upg);
-    g.income = save.income || 0;
-    g.totalEarned = save.totalEarned || 0;
+    g.income = (save.income || 0) * oldWon;
+    g.totalEarned = (save.totalEarned || 0) * oldWon;
     g.totalTons = save.totalTons || 0;
     g.deliveries = save.deliveries || 0;
     g.onTimeCount = save.onTimeCount || 0;
@@ -982,9 +990,9 @@ export class Game {
     for (const rec of save.routes || []) {
       const r = g.routes.get(rec.id);
       if (!r || !r.valid) continue;
-      r.earned = rec.e || 0; r.delivered = rec.d || 0; r.auto = !!rec.a; r.model = rec.sel || 0;
+      r.earned = (rec.e || 0) * oldWon; r.delivered = rec.d || 0; r.auto = !!rec.a; r.model = rec.sel || 0;
       rec.m.forEach((modelIdx, i) => {
-        const v = g.addTruck(r, modelIdx, rec.p ? rec.p[i] : 0);
+        const v = g.addTruck(r, modelIdx, oldWon > 1 ? TRUCKS[modelIdx].price : (rec.p ? rec.p[i] : 0));
         // 도로에 고르게 흩어 놓아 불러오자마자 한꺼번에 몰리지 않게 한다
         const leg = Math.random() < 0.5 ? 1 : 0;
         const path = leg === 1 ? r.pathTo : r.pathBack;

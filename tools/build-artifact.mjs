@@ -21,6 +21,6 @@ const walk = (dir) => {
     else files[p] = p;
   }
 };
-['js', 'css', 'data'].forEach(walk);
+['js', 'css', 'data', 'audio'].forEach(walk);
 fs.writeFileSync('dist/artifact-files.json', JSON.stringify(files, null, 1));
 console.log(Object.keys(files).length, 'files', Object.values(files).reduce((s, p) => s + fs.statSync(p).size, 0), 'bytes');
