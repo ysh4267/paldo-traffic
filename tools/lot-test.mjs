@@ -2,6 +2,7 @@
 // 사용법: node tools/lot-test.mjs [분]
 import fs from 'node:fs';
 import { Game } from '../js/game/game.js';
+import { TRUCKS } from '../js/game/defs.js';
 
 const data = JSON.parse(fs.readFileSync('data/korea.json', 'utf8'));
 let g = new Game(data, { money: 1e15 });
@@ -49,6 +50,11 @@ function check(when) {
     let waiting = 0;
     for (const v of g.lotVehicles) if (v.lot.site === s && v.lot.phase === 'back' && !v.lot.go) waiting++;
     if (waiting !== s.lot.waiting) errs.push(`${s.name} 후진 대기 수 ${s.lot.waiting} != ${waiting}`);
+  }
+  for (const v of g.traffic.vehicles) {
+    if (v.len !== v.model.len) errs.push('트럭 길이와 차종이 어긋남');
+    if (v.model !== TRUCKS[v.modelIdx]) errs.push('트럭 차종 번호가 어긋남');
+    if (v.nextModel !== null && v.lot && v.lot.phase === 'park') errs.push('칸에 선 트럭의 전환이 밀려 있음');
   }
   for (const v of g.lotVehicles) {
     if (!v.lot) errs.push('주차장 목록에 칸 없는 트럭');
@@ -102,7 +108,8 @@ for (let t = 0, tick = 0; t < MINUTES * 60; t += DT, tick++) {
     const list = routes();
     const r = list[Math.floor(rnd() * list.length)];
     const roll = rnd();
-    if (roll < 0.45) g.buyTruck(r, Math.floor(rnd() * 4));
+    if (roll < 0.35) g.buyTruck(r, Math.floor(rnd() * 4));
+    else if (roll < 0.5) g.convertTrucks(r, 1 + Math.floor(rnd() * 3), 2);
     else if (roll < 0.8) g.sellTruck(r);
     else {
       const jam = g.jams[0];

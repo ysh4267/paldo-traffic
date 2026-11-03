@@ -494,6 +494,7 @@ export class Game {
   }
   // 칸에 멈춘 뒤: 실을 트럭은 대기장 줄에, 내릴 트럭은 하차 줄에 선다
   lotParked(s, v) {
+    if (v.nextModel !== null) this.applyConvert(v);
     if (v.leg === 1) {
       v.state = 'queue';
       s.unloadQ.push(v);
@@ -890,6 +891,44 @@ export class Game {
     return true;
   }
 
+  // ── 트럭 전환 ─────────────────────────────────────
+  // 이 노선에서 modelIdx보다 적게 싣는 트럭. 가장 적게 싣는 것부터
+  convertibleTrucks(route, modelIdx) {
+    const capOf = (v) => TRUCKS[v.nextModel ?? v.modelIdx].cap;
+    const cap = TRUCKS[modelIdx].cap;
+    return route.trucks.filter((v) => !v.retire && capOf(v) < cap).sort((a, b) => capOf(a) - capOf(b));
+  }
+  // 지금 트럭을 팔고 같은 노선에 새로 샀을 때와 같은 값이다
+  convertPrice(v, modelIdx) {
+    return Math.max(0, TRUCKS[modelIdx].price * (1 + TRUCK_STEP * (v.route.trucks.length - 1)) - (v.price || 0) * 0.5);
+  }
+  // n대까지 전환한다. 서 있는 트럭은 바로, 달리는 트럭은 다음 거점에 닿을 때 바뀐다
+  convertTrucks(route, modelIdx, n = Infinity) {
+    const out = { n: 0, paid: 0 };
+    if (!route.valid || !this.modelUnlocked(modelIdx)) return out;
+    for (const v of this.convertibleTrucks(route, modelIdx)) {
+      if (out.n >= n) break;
+      const price = this.convertPrice(v, modelIdx);
+      if (this.money < price) break;
+      this.money -= price;
+      v.price = TRUCKS[modelIdx].price * (1 + TRUCK_STEP * (route.trucks.length - 1));
+      v.nextModel = modelIdx;
+      if (v.lot ? v.lot.phase === 'park' : v.state === 'queue' || v.state === 'bay') this.applyConvert(v);
+      out.n++;
+      out.paid += price;
+    }
+    return out;
+  }
+  applyConvert(v) {
+    const m = TRUCKS[v.nextModel];
+    v.model = m;
+    v.modelIdx = v.nextModel;
+    v.len = m.len;
+    v.speedF = m.speed * (1 + this.upg.speed * 0.05);
+    v.nextModel = null;
+    v.aT = undefined; // 축 길이가 바뀌었으니 다음에 그릴 때 곧게 다시 놓는다
+  }
+
   removeTruck(v) {
     this.dropLot(v);
     this.traffic.extract(v);
@@ -1187,7 +1226,7 @@ export class Game {
         id: s.id, lv: s.level, b: s.bays, st: s.stock, inb: s.inBuf, gr: s.growth, cs: s.cityStage, d: s.delivered,
       })),
       routes: [...this.routes.values()].filter((r) => r.trucks.length || r.earned || r.auto).map((r) => ({
-        id: r.id, m: r.trucks.map((t) => t.modelIdx), p: r.trucks.map((t) => Math.round(t.price || 0)), e: r.earned, d: r.delivered, a: r.auto ? 1 : 0, sel: r.model,
+        id: r.id, m: r.trucks.map((t) => t.nextModel ?? t.modelIdx), p: r.trucks.map((t) => Math.round(t.price || 0)), e: r.earned, d: r.delivered, a: r.auto ? 1 : 0, sel: r.model,
       })),
     };
   }

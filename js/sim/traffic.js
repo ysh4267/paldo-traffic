@@ -50,6 +50,7 @@ export class Vehicle {
     this.mergeLead = null;
     this.a = 0;          // 지금 가속도 km/s² (브레이크를 밟으면 음수)
     this.ci = 0;         // 지금 경로에서 이미 지나온 급커브 수
+    this.nextModel = null; // 다음 거점에 닿으면 바뀔 차종 번호
     this.odo = 0;
     this.state = 'idle'; // idle | road | bay | queue | ship
     this.cargo = 0;
