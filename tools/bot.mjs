@@ -56,7 +56,9 @@ function act() {
         g.setControl(n, 'interchange'); return 'ic2';
       }
       for (const e of n.inE) {
-        if (!saving && e.cong > 0.55 && g.canAddLane(e.road) && g.money >= g.lanePrice(e.road)) { g.addLane(e.road); return 'lane'; }
+        // 이미 넓힌 도로를 또 넓히는 건 돈이 넉넉할 때만 한다 (사람처럼 트럭값을 남겨 둔다)
+        const widened = e.road.lanes - (e.road.kind === 'x' ? 2 : 1) + 1;
+        if (!saving && e.cong > 0.55 && g.canAddLane(e.road) && g.money >= g.lanePrice(e.road) * widened * widened) { g.addLane(e.road); return 'lane'; }
       }
       if (j.stuck > 50 && g.techs.has('tow') && g.money >= g.towPrice(n)) { g.tow(n); return 'tow'; }
     }

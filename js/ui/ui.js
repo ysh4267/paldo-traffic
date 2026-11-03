@@ -1251,7 +1251,7 @@ export class UI {
       }, h('span', { class: 'disc' }, ico(t.icon)), h('b', null, name), h('small', null, on ? '사용 중' : price ? fmtWon(price) : '무료'));
     })));
     if (n.control === 'roundabout' && g.techs.has('ring2') && n.ringLanes < 2) {
-      body.push(h('button', { class: 'btn up', key: 'ring2', onclick: () => { if (g.buyRing2(n)) { this.sound.place(); this.r.baseDirty = true; } } }, '2차로로 확장'));
+      body.push(h('button', { class: 'btn up', key: 'ring2', disabled: g.money < g.ringPrice(), onclick: () => { if (g.buyRing2(n)) { this.sound.place(); this.r.baseDirty = true; } } }, h('span', null, '2차로로 확장'), h('span', { class: 'price' }, fmtWon(g.ringPrice()))));
     }
     if (this.hold('tow', (stuck || n.waiting > 6) && g.techs.has('tow'))) {
       body.push(h('button', {
@@ -1333,7 +1333,7 @@ export class UI {
     if (canAdd) {
       body.push(h('button', {
         class: 'btn up', key: 'lane', disabled: g.money < price,
-        'data-tip': `1km당 ${fmtWon(LANE_PRICE_PER_KM[r.kind])} 기준입니다. 차로가 늘수록 비싸지고, 땅값이 비싼 지역은 보상비가 더 듭니다.\n차로가 늘면 줄을 더 많이 세울 수 있고, 좌회전과 직진 트럭이 서로 막지 않습니다.`,
+        'data-tip': `1km당 ${fmtWon(LANE_PRICE_PER_KM[r.kind])} 기준입니다. 몇 번째 차로든 값이 같고, 땅값이 비싼 지역은 보상비가 더 듭니다.\n차로가 늘면 줄을 더 많이 세울 수 있고, 좌회전과 직진 트럭이 서로 막지 않습니다.`,
         onclick: () => { if (g.addLane(r)) { this.sound.place(); this.r.baseDirty = true; this.renderInspector(true); } else this.sound.deny(); },
       }, h('span', null, `왕복 ${r.lanes * 2} → ${r.lanes * 2 + 2}차로`), h('span', { class: 'price' }, fmtWon(price))));
     } else body.push(h('p', { class: 'status', key: 'max' }, '최대 차로입니다.'));

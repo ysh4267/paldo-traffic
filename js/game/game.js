@@ -1035,10 +1035,10 @@ export class Game {
   // ── 도구 가격과 적용 ───────────────────────────────────
   landFactor(region) { return LAND_FACTOR[Math.min(region, LAND_FACTOR.length - 1)]; }
 
+  // 몇 번째 차로든 값이 같다. 길이와 땅값으로만 달라진다
   lanePrice(road) {
     const per = LANE_PRICE_PER_KM[road.kind] || 0;
-    const extra = road.lanes - BASE_LANES[road.kind] + 1;
-    return Math.max(LANE_PRICE_MIN, per * road.len * extra * extra * this.landFactor(road.region));
+    return Math.max(LANE_PRICE_MIN, per * road.len * this.landFactor(road.region));
   }
   canAddLane(road) { return road.kind !== 'f' && road.lanes < MAX_LANES[road.kind]; }
   addLane(road) {
@@ -1050,11 +1050,12 @@ export class Game {
     return true;
   }
 
+  // 교차로 설치비는 어디에 몇 번을 놓아도 같다
   controlPrice(node, control) {
     if (control === 'auto') return 0;
-    if (control === 'signal') return TOOL_PRICE.signal;
-    return (TOOL_PRICE[control] || 0) * this.landFactor(node.region);
+    return TOOL_PRICE[control] || 0;
   }
+  ringPrice() { return TOOL_PRICE.ring2; }
   toolAllowed(tool) {
     if (tool === 'signal') return this.techs.has('signal');
     if (tool === 'roundabout') return this.techs.has('roundabout');
@@ -1072,7 +1073,7 @@ export class Game {
   }
   buyRing2(node) {
     if (node.control !== 'roundabout' || node.ringLanes >= 2 || !this.techs.has('ring2')) return false;
-    const c = TOOL_PRICE.ring2 * this.landFactor(node.region);
+    const c = this.ringPrice();
     if (this.money < c) return false;
     this.money -= c;
     node.ringLanes = 2;
