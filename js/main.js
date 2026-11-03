@@ -29,7 +29,7 @@ class App {
     this.miniT = 0;
     this.started = false;
     this.lastFrame = 0;
-    this.lastBg = performance.now();
+    this.lastSim = performance.now();
     this.awayBank = 0;
     this.isAway = false;
     this.awayEl = document.getElementById('away');
@@ -423,25 +423,31 @@ class App {
     const dt = Math.min(0.25, realDt);
     this.last = t;
     this.lastFrame = performance.now();
+    this.advanceToNow(realDt > 0.1 ? 40 : 14);
     this.settleAway();
-    // 프레임이 드물어도 게임 시간은 실제 시간을 따라간다
-    this.advance(Math.min(1, realDt), realDt > 0.1 ? 40 : 14);
     this.handleEvents();
     this.renderer.frame(dt);
     this.slowUpdates(dt);
     if (this.isAway) this.setAway(false);
   }
 
+  // 렌더 루프와 타이머가 같은 시계를 나눠 쓴다. 게임 시간은 언제나 실제 시간을 따라간다
+  advanceToNow(budgetMs) {
+    const now = performance.now();
+    const gap = (now - this.lastSim) / 1000;
+    this.lastSim = now;
+    const sim = Math.min(gap, 5);
+    this.advance(sim, budgetMs);
+    if (gap > sim && this.started) this.awayBank += gap - sim;
+    return sim;
+  }
+
   // 창이 가려져 화면 갱신이 멈춰도 트럭은 계속 달린다
   backgroundTick() {
     const now = performance.now();
-    const gap = (now - this.lastBg) / 1000;
-    this.lastBg = now;
     if (now - this.lastFrame < 500) return;
     if (this.lastFrame > 0 && now - this.lastFrame > 1500) this.setAway(true);
-    const sim = Math.min(gap, 5);
-    this.advance(sim, 120);
-    if (gap > sim && this.started) this.awayBank += gap - sim;
+    const sim = this.advanceToNow(120);
     this.handleEvents();
     this.slowUpdates(sim);
   }
@@ -480,7 +486,6 @@ class App {
       this.save();
     } else {
       this.last = performance.now();
-      this.lastBg = this.last;
       this.settleAway();
     }
   }
