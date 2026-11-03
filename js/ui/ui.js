@@ -225,7 +225,7 @@ export class UI {
     let text = '';
     if (!hit) {
       const help = { yield: '교차로로 들어오는 방향을 누르세요', stop: '교차로로 들어오는 방향을 누르세요', signal: '교차로를 누르세요', roundabout: '교차로를 누르세요', interchange: '교차로를 누르세요', lane: '넓힐 도로를 누르세요', remove: '되돌릴 교차로를 누르세요' };
-      patch(el, [h('span', null, `${def.name}: ${help[t]}  ·  `, h('b', null, 'Esc'), ' 취소')]);
+      patch(el, [h('span', null, `${def.name}: ${help[t]}  ·  `, h('b', null, 'Esc'), ' 또는 ', h('b', null, '우클릭'), ' 취소')]);
       el.classList.add('show');
       return;
     }
@@ -928,7 +928,7 @@ export class UI {
             ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, '정말 처음부터'))
             : h('button', { class: 'btn danger', onclick: () => { this.confirmReset = true; this.renderModal(); } }, '처음부터 다시 시작')),
         h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
-          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · M: 배경음 · Esc: 취소')),
+          h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · M: 배경음 · Esc 또는 우클릭: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
           h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다. 화면 디자인은 Dinosaur Polo Club의 Mini Metro를 참고했습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth. 그림은 모두 코드로 그린 벡터입니다.', h('br'), `배경음: ${MUSIC_TRACKS.map((q) => `${q.artist}, ${q.title}`).join(' · ')} (모두 CC0, OpenGameArt). 효과음은 코드로 합성했습니다.`, h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
   }

@@ -243,6 +243,10 @@ class App {
       if (this.pointers.size === 0 && !p.moved && p.button === 0) {
         const hit = this.renderer.pick(e.clientX, e.clientY, this.ui.tool);
         if (!this.painted.size) this.ui.applyAt(hit);
+      } else if (this.pointers.size === 0 && !p.moved && p.button === 2 && this.ui.tool !== 'select') {
+        // 우클릭은 설치 취소. 끌면 지도 이동이다
+        this.sound.click();
+        this.ui.setTool('select');
       }
     };
     c.addEventListener('pointerup', end);
