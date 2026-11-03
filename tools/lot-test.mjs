@@ -152,6 +152,8 @@ for (let t = 0, tick = 0; t < MINUTES * 60; t += DT, tick++) {
     lastDeliv = g.deliveries;
   }
 }
+// 직전 점검과 시간 차이가 없을 수 있으니, 움직였는지는 여기서 보지 않는다
+lastPos = new Map();
 errors += check('끝');
 const share = overlaps / Math.max(1, overlapSamples);
 console.log(`겹침 ${overlaps}건 / ${overlapSamples}짝 (${(share * 100).toFixed(2)}%), 비집고 지나간 횟수 ${g.lotGhosts}`);

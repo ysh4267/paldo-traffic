@@ -482,6 +482,7 @@ export class Game {
   }
   // 새 트럭이나 구난된 트럭은 빈 칸에 바로 세운다
   parkNow(s, v) {
+    if (v.nextModel !== null) this.applyConvert(v);
     const stall = this.takeStall(s, v);
     if (stall >= 0) {
       const seg = s.lot.pathIn(stall, 0);
