@@ -262,7 +262,7 @@ export class UI {
       h('div', { class: 'bar-spacer' }),
       h('div', { class: 'speed' },
         speedBtn(0, `<span class="ico">${iconHtml('pause')}</span>`, '일시정지 (스페이스바)'),
-        speedBtn(1, '1배', '보통 속도'), speedBtn(2, '2배', '2배 속도'), speedBtn(4, '4배', '4배 속도')),
+        speedBtn(1, '1배', '보통 속도'), speedBtn(2, '2배', '2배 속도'), speedBtn(4, '4배', '4배 속도'), speedBtn(8, '8배', '8배 속도')),
       h('div', { class: 'menu' },
         h('button', { onclick: () => this.openModal('research'), 'data-tip': '연구 (R)' }, ico('research'), h('span', null, '연구'), researchReady && h('i', { class: 'dot' })),
         h('button', { onclick: () => this.openModal('build'), 'data-tip': '우회도로·대교 건설 (B)' }, ico('build'), h('span', null, '건설'), buildReady && h('i', { class: 'dot' })),
@@ -362,10 +362,10 @@ export class UI {
           ico(s.kind), h('div', { class: 't' }, h('b', null, s.name), h('small', null, `${GOODS[s.goods].name} · 트럭 ${trucks}대`)), h('span', { class: `chip ${st.tone}` }, st.short));
       })));
     }
-    return [
-      this.head('', raw(routeShield('x', '8'), 'shield'), '전국 운행 현황', `${g.currentRegion.name} 개발 중`, null),
-      h('div', { class: 'p-body', key: 'body' }, body),
-    ];
+    const toggle = h('button', { class: 'p-x', key: 'tg', 'aria-label': this.collapsed ? '펼치기' : '접기', 'data-tip': this.collapsed ? '펼치기' : '접기', onclick: () => { this.collapsed = !this.collapsed; this.renderInspector(true); } }, ico('chevron', this.collapsed ? 'turn-down' : 'turn-up'));
+    const head = this.head('', raw(routeShield('x', '8'), 'shield'), '전국 운행 현황', `${g.currentRegion.name} 개발 중`, null);
+    head.kids.push(toggle);
+    return [head, h('div', { class: 'p-body', key: 'body' }, body)];
   }
 
   advice() {

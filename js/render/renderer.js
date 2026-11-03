@@ -968,8 +968,9 @@ export class Renderer {
   // ── 거점 ───────────────────────────────────────────
   siteBadgeSize(s) {
     const k = this.cam.k;
+    if (k > 0.62) return s.isCity ? 3.6 + Math.min(3, Math.sqrt(s.pop) / 7) : 3;
     const base = s.isCity ? 15 : 13.5;
-    const f = k > 0.7 ? 0.52 : k > 0.42 ? 0.68 : k > 0.22 ? 0.86 : k > 0.1 ? 1 : k > 0.05 ? 1.2 : 1.42;
+    const f = k > 0.42 ? 0.68 : k > 0.22 ? 0.86 : k > 0.1 ? 1 : k > 0.05 ? 1.2 : 1.42;
     return base * f;
   }
 
@@ -981,7 +982,7 @@ export class Renderer {
       const x = cam.sx(s.x), y = cam.sy(s.y);
       if (x < -60 || y < -60 || x > cam.W + 60 || y > cam.H + 60) continue;
       if (!s.available) {
-        if (s.stage > game.stage) continue;
+        if (s.stage > game.stage || k > 0.62) continue;
         // 곧 열릴 거점
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
         ctx.strokeStyle = 'rgba(60,70,60,0.5)';
@@ -1029,6 +1030,24 @@ export class Renderer {
     const game = this.game;
     const sel = this.selection?.site === s;
     const ringCol = s.isCity ? SITE_RING.city : s.kind === 'port' ? SITE_RING.port : s.inputs ? SITE_RING.fact : SITE_RING.raw;
+    if (r < 6) {
+      // 전국 축척: 점으로 표시
+      ctx.fillStyle = s.isCity ? '#ffffff' : ringCol;
+      ctx.strokeStyle = s.isCity ? '#0b4f3a' : 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = s.isCity ? 1.7 : 1;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (sel) {
+        ctx.strokeStyle = '#0b6b4f';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(x, y, r + 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      return;
+    }
     // 그림자
     ctx.fillStyle = 'rgba(30,40,30,0.24)';
     ctx.beginPath();
@@ -1042,7 +1061,7 @@ export class Renderer {
     ctx.lineWidth = Math.max(1.4, r * 0.15);
     ctx.stroke();
     // 재고 게이지
-    if (s.produces && r > 7) {
+    if (s.produces && r >= 8) {
       const frac = s.stock / game.siteCap(s);
       ctx.strokeStyle = 'rgba(0,0,0,0.14)';
       ctx.lineWidth = 3;

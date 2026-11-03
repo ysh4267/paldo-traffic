@@ -134,7 +134,7 @@ class App {
   applyCameraPadding() {
     const narrow = window.innerWidth < 760;
     const cam = this.renderer.cam;
-    if (narrow) cam.pad = { l: 8, r: 8, t: 118, b: 200 };
+    if (narrow) cam.pad = { l: 8, r: 8, t: 124, b: 120 };
     else cam.pad = { l: 74, r: 362, t: 106, b: 60 };
   }
 
