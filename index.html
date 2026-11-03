@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>팔도 트래픽</title>
 <meta name="description" content="대한민국 실제 도로망 위에서 트럭을 굴리고, 신호등과 차로로 정체를 풀며 전국 물류망을 완성하는 인크리멘탈 웹게임">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 38'%3E%3Cpath d='M3 3c5 2 10 2 15 0 5 2 10 2 15 0 2 12 1 26-15 33C2 29 1 15 3 3z' fill='%230b4ea2'/%3E%3Cpath d='M3 3c5 2 10 2 15 0 5 2 10 2 15 0l.8 8H2.200z' fill='%23d9352b'/%3E%3Ctext x='18' y='28' text-anchor='middle' font-size='15' font-weight='800' fill='%23fff' font-family='sans-serif'%3E8%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='6' fill='%23f6f1e3'/%3E%3Cpath d='M3 24h9l12-12h9' fill='none' stroke='%23e8452e' stroke-width='5' stroke-linejoin='round'/%3E%3Ccircle cx='18' cy='18' r='6' fill='%23fff' stroke='%232a2a28' stroke-width='3'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gothic+A1:wght@400;500;600;700;800;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -16,11 +16,12 @@
 <div id="ui">
   <header id="topbar"></header>
   <div id="goal"></div>
+  <div id="todo"></div>
   <nav id="dock" aria-label="도구"></nav>
-  <aside id="inspector" aria-label="정보 패널"></aside>
-  <div id="vms" aria-live="off"></div>
+  <div id="menu"></div>
+  <aside id="inspector" aria-label="정보 카드" hidden></aside>
   <div id="mini"><canvas id="minimap" width="150" height="172" aria-label="전국 미니맵"></canvas></div>
-  <div id="zoomctl"><button id="z-in" aria-label="확대" title="확대"></button><button id="z-out" aria-label="축소" title="축소"></button><button id="z-all" aria-label="전국 보기" title="개발 중인 지역 전체 보기"></button></div>
+  <div id="zoomctl"><button id="z-out" aria-label="축소" data-tip="축소"></button><button id="z-all" aria-label="전체 보기" data-tip="개발 중인 지역 전체 보기"></button><button id="z-in" aria-label="확대" data-tip="확대"></button></div>
   <a id="osm" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
   <div id="toolhint"></div>
   <div id="tooltip" hidden></div>
@@ -29,7 +30,7 @@
   <div id="banner"></div>
   <div id="modal"></div>
 </div>
-<div id="away" aria-hidden="true"><div class="away-sign"><small>백그라운드 운행 중</small><b>트럭은 계속 달리고 있습니다</b></div></div>
+<div id="away" aria-hidden="true"><div class="away-sign"><small>자리를 비운 사이에도</small><b>트럭은 계속 달립니다</b></div></div>
 <div id="boot"><div class="boot-shield"></div><p>지도를 펼치는 중입니다</p></div>
 <noscript>이 게임을 하려면 자바스크립트를 켜 주세요.</noscript>
 <script type="module" src="js/main.js"></script>

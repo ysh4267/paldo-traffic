@@ -4,11 +4,12 @@
 
 대한민국 실제 도로망 위에서 트럭을 굴리고, 표지판과 신호등과 차로로 정체를 풀며 전국 물류망을 완성하는 인크리멘탈 웹게임입니다.
 
-Rischer Kriebl의 [Incremental Traffic](https://store.steampowered.com/app/5475960/Incremental_Traffic/)에서 영감을 받아 한국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았고, 게임 안의 그림은 모두 코드로 그린 벡터입니다.
+Rischer Kriebl의 [Incremental Traffic](https://store.steampowered.com/app/5475960/Incremental_Traffic/)에서 영감을 받아 한국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았고, 게임 안의 그림은 모두 코드로 그린 벡터입니다. 화면과 트럭 표현은 Dinosaur Polo Club의 [Mini Metro](https://store.steampowered.com/app/287980/Mini_Metro/)를 참고했습니다.
 
 ## 게임 소개
 
 - 도로 위의 차는 전부 내 트럭입니다. 트럭을 늘리면 돈을 벌지만 그만큼 길이 막힙니다.
+- 트럭이 다니는 노선은 화물 색 선으로 지도에 나타나, 전국 물류망이 지하철 노선도처럼 자라납니다.
 - 차선 단위로 움직이는 시뮬레이션이라 정체, 꼬리물기, 교착이 저절로 생깁니다.
 - 1톤 트럭 ₩2,200만, 신호등 ₩7,300만, 인천대교 ₩2.38조처럼 금액은 실제 시세와 공사비를 바탕으로 했습니다.
 - 양보·정지 표지, 신호등, 회전교차로, 입체교차로, 차로 추가로 정체를 풉니다.

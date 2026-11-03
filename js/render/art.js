@@ -1,86 +1,113 @@
-// 게임에 쓰는 모든 그림. 전부 코드로 직접 그린 SVG 벡터이며 외부 이미지는 없다.
-// 같은 원본을 DOM(인라인 SVG)과 캔버스(래스터화한 스프라이트)에서 함께 쓴다.
+// 게임에 쓰는 그림. 전부 코드로 직접 그린 단색 SVG 벡터이며 외부 이미지는 없다.
+// 글자색(currentColor)을 따라가므로 버튼 색이 곧 아이콘 색이다.
+import { GOODS } from '../game/defs.js';
 
 const S = (body, vb = 40) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${vb} ${vb}">${body}</svg>`;
+const line = (d, w = 3.4) => `<path d="${d}" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+const solid = (d) => `<path d="${d}" fill="currentColor" fill-rule="evenodd"/>`;
+const ring = (cx, cy, r, w = 3.4) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="currentColor" stroke-width="${w}"/>`;
+const dot = (cx, cy, r) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="currentColor"/>`;
+
+// ── 거점 도형 ───────────────────────────────────────
+// 단위 좌표이며 캔버스와 DOM이 함께 쓴다
+const ngon = (n, r) => Array.from({ length: n }, (_, i) => {
+  const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+  return [Math.cos(a) * r, Math.sin(a) * r];
+});
+const starPoints = Array.from({ length: 10 }, (_, i) => {
+  const a = -Math.PI / 2 + (i / 10) * Math.PI * 2;
+  const r = i % 2 ? 0.56 : 1.3;
+  return [Math.cos(a) * r, Math.sin(a) * r];
+});
+export const SHAPES = {
+  triangle: [[0, -1.18], [1.08, 0.72], [-1.08, 0.72]],
+  square: [[-0.88, -0.88], [0.88, -0.88], [0.88, 0.88], [-0.88, 0.88]],
+  diamond: [[0, -1.24], [1.24, 0], [0, 1.24], [-1.24, 0]],
+  pentagon: ngon(5, 1.12),
+  hexagon: ngon(6, 1.08),
+  cross: [[-0.38, -1.1], [0.38, -1.1], [0.38, -0.38], [1.1, -0.38], [1.1, 0.38], [0.38, 0.38], [0.38, 1.1], [-0.38, 1.1], [-0.38, 0.38], [-1.1, 0.38], [-1.1, -0.38], [-0.38, -0.38]],
+  star: starPoints,
+};
+// 원자재는 세모, 공장은 네모, 완제품 공장은 오각·육각, 항만은 마름모, 도시는 동그라미
+const KIND_SHAPE = {
+  orchard: 'triangle', field: 'triangle', forest: 'triangle', quarry: 'triangle', sea: 'triangle', salt: 'triangle',
+  foodplant: 'square', sawmill: 'square', cementplant: 'square', steelmill: 'square', chemplant: 'square', furniture: 'square', partsplant: 'square',
+  appliance: 'pentagon', carplant: 'pentagon', fab: 'hexagon', shipyard: 'hexagon',
+  port: 'diamond', city: 'circle', dokdo: 'star',
+};
+export function siteShape(s) {
+  if (s.kind === 'port' && s.def.air) return 'cross';
+  return KIND_SHAPE[s.kind] || 'circle';
+}
+function shapeSvg(shape, fillDot) {
+  const R = 13;
+  const style = 'fill="var(--station, #fff)" stroke="var(--ink, #2a2a28)" stroke-width="4.6" stroke-linejoin="round"';
+  const body = shape === 'circle'
+    ? `<circle cx="20" cy="20" r="${R}" ${style}/>`
+    : `<polygon points="${SHAPES[shape].map(([x, y]) => `${(20 + x * R).toFixed(1)},${(20 + y * R).toFixed(1)}`).join(' ')}" ${style}/>`;
+  const inner = fillDot ? `<circle cx="20" cy="${shape === 'triangle' ? 22 : 20}" r="5" fill="${fillDot}"/>` : '';
+  return S(body + inner);
+}
+export function siteIcon(s) {
+  return shapeSvg(siteShape(s), s.goods ? GOODS[s.goods].color : null);
+}
+
+// 톱니바퀴 윤곽
+function gearPath() {
+  const out = [];
+  const teeth = 8;
+  for (let i = 0; i < teeth * 4; i++) {
+    const a = (i / (teeth * 4)) * Math.PI * 2 - Math.PI / teeth / 4;
+    const r = i % 4 < 2 ? 17 : 13;
+    out.push(`${(20 + Math.cos(a) * r).toFixed(1)} ${(20 + Math.sin(a) * r).toFixed(1)}`);
+  }
+  return `M${out.join('L')}ZM20 14a6 6 0 1 0 0 12a6 6 0 1 0 0-12Z`;
+}
+const truckSide = (bodyD, wheels) => S(solid(bodyD) + wheels.map((x) => dot(x, 29.5, 3.6)).join(''));
 
 export const ICONS = {
-  // ── 거점 ──────────────────────────────────────────
-  orchard: S(`<path d="M18 22h4l1 14h-6z" fill="#7a4e2a"/><circle cx="20" cy="14" r="11.5" fill="#3f9a45"/><circle cx="12.5" cy="19" r="7.5" fill="#37893d"/><circle cx="27.5" cy="19" r="7.5" fill="#37893d"/><circle cx="15" cy="12" r="2.6" fill="#e8402f"/><circle cx="24" cy="10" r="2.6" fill="#e8402f"/><circle cx="26.5" cy="19" r="2.6" fill="#e8402f"/><circle cx="12.5" cy="20" r="2.6" fill="#e8402f"/><circle cx="20" cy="18" r="2.6" fill="#e8402f"/>`),
-  field: S(`<rect x="4" y="27" width="32" height="9" rx="2" fill="#8a6a2a"/><g stroke="#c98d12" stroke-width="2.2" stroke-linecap="round" fill="none"><path d="M10 28V11"/><path d="M20 28V7"/><path d="M30 28V11"/></g><g fill="#f0b429"><ellipse cx="7.4" cy="14" rx="2.2" ry="3.2" transform="rotate(-28 7.4 14)"/><ellipse cx="12.6" cy="14" rx="2.2" ry="3.2" transform="rotate(28 12.6 14)"/><ellipse cx="7.4" cy="20" rx="2.2" ry="3.2" transform="rotate(-28 7.4 20)"/><ellipse cx="12.6" cy="20" rx="2.2" ry="3.2" transform="rotate(28 12.6 20)"/><ellipse cx="17.4" cy="10" rx="2.2" ry="3.2" transform="rotate(-28 17.4 10)"/><ellipse cx="22.6" cy="10" rx="2.2" ry="3.2" transform="rotate(28 22.6 10)"/><ellipse cx="17.4" cy="16" rx="2.2" ry="3.2" transform="rotate(-28 17.4 16)"/><ellipse cx="22.6" cy="16" rx="2.2" ry="3.2" transform="rotate(28 22.6 16)"/><ellipse cx="17.4" cy="22" rx="2.2" ry="3.2" transform="rotate(-28 17.4 22)"/><ellipse cx="22.6" cy="22" rx="2.2" ry="3.2" transform="rotate(28 22.6 22)"/><ellipse cx="27.4" cy="14" rx="2.2" ry="3.2" transform="rotate(-28 27.4 14)"/><ellipse cx="32.6" cy="14" rx="2.2" ry="3.2" transform="rotate(28 32.6 14)"/><ellipse cx="27.4" cy="20" rx="2.2" ry="3.2" transform="rotate(-28 27.4 20)"/><ellipse cx="32.6" cy="20" rx="2.2" ry="3.2" transform="rotate(28 32.6 20)"/></g>`),
-  forest: S(`<rect x="9" y="28" width="4" height="8" fill="#6b4423"/><rect x="25" y="26" width="4" height="10" fill="#6b4423"/><path d="M11 4 20 19h-4l6 10H0l6-10H2z" fill="#2c7a3f"/><path d="M27 2l9 15h-4l7 12H15l7-12h-4z" fill="#1f6634"/>`),
-  quarry: S(`<path d="M2 35 14 11l6 7 5-11 13 28z" fill="#99a3ab"/><path d="M14 11l6 7-3 5-6-3zM25 7l6 13-6 2-3-9z" fill="#c4ccd2"/><path d="M6 35l5-9h9l3 4h9l2 5z" fill="#6f7a83"/><g stroke="#3e464d" stroke-width="2.4" stroke-linecap="round"><path d="M28 28l-9-9"/></g><path d="M15 19c3-4 7-5 10-4l-2 2c-2 0-4 1-5 4z" fill="#3e464d"/>`),
-  sea: S(`<path d="M20 5v16" stroke="#5a4a3a" stroke-width="2"/><path d="M21 6l9 12H21z" fill="#fff" stroke="#c9d6dd"/><path d="M6 22h28l-4 8H10z" fill="#d9402f"/><path d="M6 22h28l-1 2H7z" fill="#a92c20"/><path d="M1 30c3-3 5-3 8 0s5 3 8 0 5-3 8 0 5 3 7 1 4-2 7-1v8H1z" fill="#1f9ec0"/><path d="M1 35c3-2 5-2 8 0s5 2 8 0 5-2 8 0 5 2 7 0 4-1 7 0v4H1z" fill="#167f9c"/>`),
-  salt: S(`<g fill="#9fd8ea"><rect x="3" y="20" width="10" height="7"/><rect x="15" y="20" width="10" height="7"/><rect x="27" y="20" width="10" height="7"/><rect x="3" y="29" width="10" height="7"/><rect x="15" y="29" width="10" height="7"/><rect x="27" y="29" width="10" height="7"/></g><path d="M8 20c3-8 6-12 9-12s6 4 9 12z" fill="#fff" stroke="#b9cdd6"/><path d="M26 20c1-3 3-6 5-6s4 3 5 6z" fill="#fff" stroke="#b9cdd6"/>`),
-  port: S(`<rect x="2" y="30" width="36" height="6" fill="#4c5a65"/><path d="M1 36h38v3H1z" fill="#1f9ec0"/><g fill="#0b4ea2"><path d="M8 7h3v23H8zM17 7h3v23h-3z"/><path d="M4 6h31v3H4z"/></g><path d="M8 18h12v2H8z" fill="#0b4ea2"/><path d="M28 9h2v5h-2z" fill="#3e464d"/><rect x="25.5" y="14" width="7" height="4.5" fill="#f08a24"/><rect x="23" y="25.5" width="7" height="4.5" fill="#d9402f"/><rect x="30" y="25.5" width="7" height="4.5" fill="#17a673"/><rect x="26.5" y="21" width="7" height="4.5" fill="#f6b01e"/>`),
-  foodplant: S(`<path d="M3 36V18l9 5v-5l9 5v-5l9 5V9h7v27z" fill="#f08a24"/><path d="M3 36h34v-5H3z" fill="#c76b12"/><g fill="#fff4dd"><rect x="7" y="26" width="5" height="4"/><rect x="15" y="26" width="5" height="4"/><rect x="23" y="26" width="5" height="4"/></g><rect x="31" y="12" width="3" height="4" fill="#fff4dd"/><path d="M33 8c0-3 3-3 2-6" stroke="#9aa5ab" stroke-width="1.6" fill="none"/>`),
-  sawmill: S(`<rect x="1" y="26" width="38" height="9" rx="4.5" fill="#94633a"/><ellipse cx="35" cy="30.5" rx="3.6" ry="4.5" fill="#d9ae79"/><ellipse cx="35" cy="30.5" rx="1.8" ry="2.4" fill="none" stroke="#94633a"/><circle cx="17" cy="16" r="11" fill="#b9c4cc"/><g fill="#7f8c96"><path d="M17 2l3 4h-6zM27 6l-1 5-4-3zM31 16l-4 3v-6zM27 26l-5-1 3-4zM17 30l-3-4h6zM7 26l1-5 4 3zM3 16l4-3v6zM7 6l5 1-3 4z"/></g><circle cx="17" cy="16" r="3" fill="#3e464d"/>`),
-  furniture: S(`<path d="M7 19a4 4 0 0 1 4 4v3h18v-3a4 4 0 0 1 8 0v10H3V23a4 4 0 0 1 4-4z" fill="#b5651d"/><path d="M9 8a4 4 0 0 1 4-4h14a4 4 0 0 1 4 4v14H9z" fill="#d48a45"/><rect x="11" y="24" width="18" height="6" rx="2" fill="#e8a968"/><path d="M6 33h4v4H6zM30 33h4v4h-4z" fill="#6b3d12"/>`),
-  cementplant: S(`<rect x="4" y="9" width="9" height="27" rx="2" fill="#a9b3ba"/><ellipse cx="8.5" cy="9" rx="4.5" ry="2.2" fill="#c9d1d7"/><rect x="15" y="14" width="9" height="22" rx="2" fill="#8f9aa2"/><ellipse cx="19.5" cy="14" rx="4.5" ry="2.2" fill="#b4bec5"/><rect x="26" y="20" width="11" height="16" fill="#6f7a83"/><path d="M13 12l11 8-1.4 1.8-11-8z" fill="#4c5a65"/><path d="M29 20V9h4v11z" fill="#4c5a65"/><path d="M31 8c-1-3 3-3 2-7" stroke="#b9c4cc" stroke-width="2" fill="none" stroke-linecap="round"/>`),
-  steelmill: S(`<path d="M9 36 13 8h12l4 28z" fill="#3f566b"/><rect x="11" y="5" width="16" height="4" fill="#2b3d4d"/><path d="M17 5V1h4v4z" fill="#2b3d4d"/><path d="M25 16h9v3h-9zM31 19h3v17h-3z" fill="#5b7a99"/><path d="M4 25h10l-2 9H6z" fill="#2b3d4d"/><path d="M5 25h8v2H5z" fill="#ff8a1e"/><path d="M9 25c-2-3 1-4 0-7 3 2 3 4 2 7z" fill="#ffb627"/>`),
-  chemplant: S(`<rect x="6" y="11" width="7" height="25" rx="2" fill="#8e5bc2"/><rect x="15" y="5" width="7" height="31" rx="2" fill="#a57bd6"/><rect x="24" y="14" width="10" height="22" rx="2" fill="#7646ab"/><g fill="#efe6fa"><rect x="6" y="17" width="7" height="1.6"/><rect x="6" y="24" width="7" height="1.6"/><rect x="15" y="11" width="7" height="1.6"/><rect x="15" y="19" width="7" height="1.6"/><rect x="15" y="27" width="7" height="1.6"/><rect x="24" y="21" width="10" height="1.6"/><rect x="24" y="28" width="10" height="1.6"/></g><path d="M31 14V4h1.6v10z" fill="#4a4458"/><path d="M32 4c-3-1-1-3 0-4 1 2 3 2 0 4z" fill="#ff8a1e"/>`),
-  partsplant: S(`<path d="M17.2 2h5.6l.9 4.6 3.2 1.3 3.9-2.6 4 4-2.7 3.8 1.4 3.3 4.5.8v5.6l-4.5.9-1.4 3.2 2.7 3.9-4 4-3.9-2.7-3.2 1.4-.9 4.5h-5.6l-.9-4.5-3.3-1.4-3.8 2.7-4-4 2.6-3.9-1.3-3.2L2 22.8v-5.6l4.6-.8 1.3-3.3-2.6-3.8 4-4 3.8 2.6 3.3-1.3z" fill="#3f6fb5"/><circle cx="20" cy="20" r="6.5" fill="#fff"/><circle cx="20" cy="20" r="3.2" fill="#3f6fb5"/>`),
-  appliance: S(`<rect x="7" y="3" width="26" height="34" rx="3" fill="#17a673"/><rect x="7" y="3" width="26" height="8" rx="3" fill="#0f7f58"/><circle cx="12" cy="7" r="1.6" fill="#fff"/><rect x="24" y="5.6" width="6.5" height="2.8" rx="1" fill="#d9f5ea"/><circle cx="20" cy="24" r="9.2" fill="#e7f8f1"/><circle cx="20" cy="24" r="6.6" fill="#76c9e0"/><path d="M14 25c3-2 4 2 6 0s4-1 6 0v2a7 7 0 0 1-12 0z" fill="#3aa3c2"/>`),
-  carplant: S(`<path d="M3 26c0-3 2-5 5-6l5-7c1-1 2-2 4-2h9c2 0 3 1 4 2l4 7c2 1 3 3 3 6v4H3z" fill="#d43f5e"/><path d="M14 13.6c.5-.6 1-.8 2-.8h4v7h-9zM22 12.8h4c1 0 1.500.2 2 .8l4 6.200H22z" fill="#d6edf5"/><circle cx="11" cy="30" r="5" fill="#2b2f33"/><circle cx="11" cy="30" r="2" fill="#c9d1d7"/><circle cx="29" cy="30" r="5" fill="#2b2f33"/><circle cx="29" cy="30" r="2" fill="#c9d1d7"/><rect x="33.500" y="23" width="3.500" height="2.500" fill="#ffe08a"/>`),
-  fab: S(`<g fill="#74808a"><rect x="4" y="2" width="3" height="6"/><rect x="11" y="2" width="3" height="6"/><rect x="18.500" y="2" width="3" height="6"/><rect x="26" y="2" width="3" height="6"/><rect x="33" y="2" width="3" height="6"/><rect x="4" y="32" width="3" height="6"/><rect x="11" y="32" width="3" height="6"/><rect x="18.500" y="32" width="3" height="6"/><rect x="26" y="32" width="3" height="6"/><rect x="33" y="32" width="3" height="6"/><rect x="2" y="9" width="6" height="3"/><rect x="2" y="18.500" width="6" height="3"/><rect x="2" y="28" width="6" height="3"/><rect x="32" y="9" width="6" height="3"/><rect x="32" y="18.500" width="6" height="3"/><rect x="32" y="28" width="6" height="3"/></g><rect x="6" y="6" width="28" height="28" rx="2.500" fill="#00857a"/><rect x="11" y="11" width="18" height="18" rx="1.500" fill="#00b3a4"/><path d="M14 15h5v4h7v6h-5v-4h-7z" fill="#d6f7f3"/>`),
-  shipyard: S(`<path d="M2 25h36l-5 11H8z" fill="#1f5fa8"/><path d="M2 25h36l-1 2.500H3z" fill="#d9402f"/><rect x="11" y="18" width="14" height="7" fill="#e6edf2"/><rect x="14" y="13" width="7" height="5" fill="#c9d6dd"/><path d="M28 25V5h3v20z" fill="#f6b01e"/><path d="M18 5h19v2.500H18z" fill="#f6b01e"/><path d="M21 7.500h1.200v6H21z" fill="#3e464d"/><path d="M1 36c3-2 5-2 8 0s5 2 8 0 5-2 8 0 5 2 7 0 4-1 7 0v3H1z" fill="#1f9ec0"/>`),
-  city: S(`<rect x="4" y="18" width="10" height="18" fill="#6a93c4"/><rect x="15" y="8" width="11" height="28" fill="#0b4ea2"/><rect x="27" y="14" width="9" height="22" fill="#4a79b3"/><g fill="#e6f0fb"><rect x="7" y="21" width="2" height="2"/><rect x="10" y="21" width="2" height="2"/><rect x="7" y="26" width="2" height="2"/><rect x="10" y="26" width="2" height="2"/><rect x="18" y="11" width="2" height="2"/><rect x="22" y="11" width="2" height="2"/><rect x="18" y="16" width="2" height="2"/><rect x="22" y="16" width="2" height="2"/><rect x="18" y="21" width="2" height="2"/><rect x="22" y="21" width="2" height="2"/><rect x="18" y="26" width="2" height="2"/><rect x="22" y="26" width="2" height="2"/><rect x="30" y="17" width="2" height="2"/><rect x="33" y="17" width="2" height="2"/><rect x="30" y="22" width="2" height="2"/><rect x="33" y="22" width="2" height="2"/></g>`),
-  dokdo: S(`<path d="M2 32 12 13l5 7 3 12z" fill="#7d6a54"/><path d="M20 32l5-16 5 5 8 11z" fill="#94806a"/><path d="M12 13l5 7-4 1-3-4zM25 16l5 5-4 1-2-3z" fill="#5f8a4a"/><path d="M26 16V6" stroke="#3e464d" stroke-width="1.200"/><rect x="26.300" y="6" width="7" height="4.800" fill="#fff" stroke="#3e464d" stroke-width=".5"/><circle cx="29.800" cy="8.400" r="1.500" fill="#d9402f"/><path d="M28.300 8.400a1.500 1.500 0 0 0 3 0z" fill="#0b4ea2"/><path d="M1 31c3-2 5-2 8 0s5 2 8 0 5-2 8 0 5 2 7 0 4-1 7 0v8H1z" fill="#1f9ec0"/>`),
+  // ── 도구 ──────────────────────────────────────────
+  t_select: S(solid('M11 5 31 22 21.500 23.500 26.500 33.500 21.800 35.800 17 25.800 11 31.500Z')),
+  t_yield: S(line('M7.500 11H32.500L20 32Z', 3.8)),
+  t_stop: S(solid('M14 5h12l9 9v12l-9 9H14l-9-9V14ZM11.500 17.800v4.400h17v-4.400Z')),
+  t_signal: S(`<rect x="12.500" y="4" width="15" height="32" rx="6" fill="none" stroke="currentColor" stroke-width="3.200"/>${dot(20, 11.500, 3)}${dot(20, 20, 3)}${dot(20, 28.500, 3)}`),
+  t_roundabout: S(line('M31.500 12.500A14 14 0 1 0 34 20', 3.8) + solid('M26 13.500 35.500 15.500 35 5.500Z')),
+  t_interchange: S(line('M6 31 34 9', 4) + line('M6 9 15.500 16.500M24.500 23.500 34 31', 4)),
+  t_lane: S(line('M9 6V34M18 6V34', 3.8) + line('M30 14V26M24 20H36', 3.8)),
+  t_remove: S(line('M10 10 30 30M30 10 10 30', 4.6)),
+  tow: S(line('M20 4V16', 3.8) + line('M20 16a6.500 6.500 0 1 1-6.500 6.500', 3.8) + line('M12 4H28', 3.8)),
 
-  // ── 화물 ──────────────────────────────────────────
-  g_fruit: S(`<path d="M20 12c-3-3-13-2-13 9 0 8 6 15 9 15 2 0 3-1 4-1s2 1 4 1c3 0 9-7 9-15 0-11-10-12-13-9z" fill="#e8402f"/><path d="M20 12c0-4 1-7 4-9" stroke="#6b4423" stroke-width="2.200" fill="none" stroke-linecap="round"/><path d="M21 8c3-3 8-3 10-1-2 3-7 4-10 1z" fill="#3f9a45"/><path d="M11 19c1-3 3-4 5-4" stroke="#ffb3a8" stroke-width="2" fill="none" stroke-linecap="round"/>`),
-  g_grain: S(`<path d="M20 38V10" stroke="#c98d12" stroke-width="2.400" stroke-linecap="round"/><g fill="#f0b429"><ellipse cx="20" cy="6" rx="2.600" ry="4"/><ellipse cx="14" cy="11" rx="2.600" ry="4.400" transform="rotate(-30 14 11)"/><ellipse cx="26" cy="11" rx="2.600" ry="4.400" transform="rotate(30 26 11)"/><ellipse cx="14" cy="19" rx="2.600" ry="4.400" transform="rotate(-30 14 19)"/><ellipse cx="26" cy="19" rx="2.600" ry="4.400" transform="rotate(30 26 19)"/><ellipse cx="14" cy="27" rx="2.600" ry="4.400" transform="rotate(-30 14 27)"/><ellipse cx="26" cy="27" rx="2.600" ry="4.400" transform="rotate(30 26 27)"/></g>`),
-  g_fish: S(`<path d="M3 20c6-9 17-11 25-3l9-6v18l-9-6c-8 8-19 6-25-3z" fill="#1fa3b8"/><path d="M3 20c6 5 17 7 25 3-8 8-19 6-25-3z" fill="#157f90"/><circle cx="11" cy="18" r="2" fill="#fff"/><circle cx="11" cy="18" r="1" fill="#10323a"/>`),
-  g_timber: S(`<g fill="#94633a"><rect x="3" y="24" width="30" height="9" rx="4.500"/><rect x="7" y="14" width="30" height="9" rx="4.500"/></g><g fill="#d9ae79"><ellipse cx="33" cy="28.500" rx="4" ry="4.500"/><ellipse cx="37" cy="18.500" rx="3" ry="4.500" transform="translate(-1)"/></g><path d="M9 28h14M13 18h14" stroke="#6b4423" stroke-width="1.400"/>`),
-  g_stone: S(`<path d="M3 33 9 19l9-3 7 6-2 11z" fill="#98a1a8"/><path d="M21 33l3-12 9-4 5 9-3 7z" fill="#b4bcc2"/><path d="M12 16l6-9 8 3 1 8-6 3-7-5z" fill="#c9d0d5"/><path d="M9 19l9-3 3 6-9 2z" fill="#7d868c"/>`),
-  g_ore: S(`<path d="M4 32 9 18l10-4 8 5-1 13z" fill="#b5573a"/><path d="M22 34l2-11 9-3 4 8-3 6z" fill="#8f3f27"/><path d="M12 18l7-3 3 5-7 3zM27 25l5-2 2 5-5 1z" fill="#d97b5a"/>`),
-  g_crude: S(`<rect x="8" y="5" width="24" height="31" rx="3" fill="#4a4458"/><rect x="6" y="11" width="28" height="3" fill="#2f2b3b"/><rect x="6" y="20" width="28" height="3" fill="#2f2b3b"/><rect x="6" y="29" width="28" height="3" fill="#2f2b3b"/><path d="M20 15c3 3 4 5 4 6.500a4 4 0 0 1-8 0c0-1.500 1-3.500 4-6.500z" fill="#f6b01e"/>`),
-  g_food: S(`<rect x="8" y="9" width="24" height="26" rx="2" fill="#f08a24"/><ellipse cx="20" cy="9" rx="12" ry="4" fill="#ffd9a8"/><ellipse cx="20" cy="9" rx="8.500" ry="2.600" fill="#c9d1d7"/><rect x="8" y="18" width="24" height="9" fill="#fff"/><path d="M15 22.500c2-3 8-3 10 0-2 3-8 3-10 0z" fill="#d9402f"/>`),
-  g_cement: S(`<path d="M8 8c6 2 18 2 24 0l3 28c-8 2-22 2-30 0z" fill="#b4bec5"/><path d="M8 8c6 2 18 2 24 0l1 7c-7 2-19 2-26 0z" fill="#8f9aa2"/><rect x="14" y="20" width="12" height="9" fill="#fff"/><path d="M16 26v-3h8v3" stroke="#6f7a83" stroke-width="1.600" fill="none"/>`),
-  g_lumber: S(`<path d="M3 18 28 7l9 4-25 11z" fill="#e0ae70"/><path d="M3 18l9 4v5l-9-4z" fill="#b5803f"/><path d="M12 22 37 11v5L12 27z" fill="#c98b4a"/><path d="M3 27l9 4 25-11v5L12 36l-9-4z" fill="#b5803f"/><path d="M12 31 37 20v5L12 36z" fill="#c98b4a"/>`),
-  g_steel: S(`<rect x="5" y="5" width="30" height="7" fill="#5b7a99"/><rect x="5" y="28" width="30" height="7" fill="#3f566b"/><rect x="16" y="12" width="8" height="16" fill="#7894af"/>`),
-  g_chem: S(`<path d="M16 3h8v3h-1v9l10 17c1.500 3-.5 5-3 5H10c-2.500 0-4.500-2-3-5l10-17V6h-1z" fill="#e8ddf6"/><path d="M12 24h16l5 8c1.500 3-.5 5-3 5H10c-2.500 0-4.500-2-3-5z" fill="#8e5bc2"/><circle cx="17" cy="30" r="2" fill="#d4bdf0"/><circle cx="24" cy="32" r="1.400" fill="#d4bdf0"/>`),
-  g_furniture: S(`<path d="M11 4h18v15H11z" fill="#d48a45"/><path d="M7 19h26v7H7z" fill="#b5651d"/><path d="M9 26h3.500v10H9zM27.500 26H31v10h-3.500z" fill="#6b3d12"/>`),
-  g_parts: S(`<path d="M17.200 2h5.600l.9 4.600 3.200 1.300 3.900-2.600 4 4-2.700 3.800 1.400 3.300 4.500.8v5.600l-4.500.9-1.400 3.200 2.700 3.900-4 4-3.900-2.700-3.200 1.400-.9 4.500h-5.600l-.9-4.500-3.300-1.400-3.800 2.700-4-4 2.600-3.900-1.300-3.200L2 22.800v-5.600l4.600-.8 1.300-3.300-2.600-3.800 4-4 3.800 2.600 3.300-1.300z" fill="#3f6fb5"/><circle cx="20" cy="20" r="5.500" fill="#fff"/>`),
-  g_appliance: S(`<rect x="7" y="3" width="26" height="34" rx="3" fill="#17a673"/><circle cx="20" cy="23" r="9" fill="#e7f8f1"/><circle cx="20" cy="23" r="6" fill="#76c9e0"/><rect x="11" y="6" width="6" height="3" rx="1" fill="#d9f5ea"/>`),
-  g_car: S(`<path d="M3 26c0-3 2-5 5-6l5-7c1-1 2-2 4-2h9c2 0 3 1 4 2l4 7c2 1 3 3 3 6v4H3z" fill="#d43f5e"/><path d="M14 13.600c.5-.6 1-.8 2-.8h4v7h-9zM22 12.800h4c1 0 1.500.2 2 .8l4 6.200H22z" fill="#d6edf5"/><circle cx="11" cy="30" r="5" fill="#2b2f33"/><circle cx="29" cy="30" r="5" fill="#2b2f33"/>`),
-  g_ship: S(`<path d="M2 21h36l-6 15H8z" fill="#1f5fa8"/><path d="M2 21h36l-1 3H3z" fill="#d9402f"/><rect x="13" y="12" width="15" height="9" fill="#e6edf2"/><rect x="17" y="6" width="7" height="6" fill="#c9d6dd"/>`),
-  g_chip: S(`<g fill="#74808a"><rect x="9" y="2" width="3" height="6"/><rect x="18.500" y="2" width="3" height="6"/><rect x="28" y="2" width="3" height="6"/><rect x="9" y="32" width="3" height="6"/><rect x="18.500" y="32" width="3" height="6"/><rect x="28" y="32" width="3" height="6"/><rect x="2" y="9" width="6" height="3"/><rect x="2" y="18.500" width="6" height="3"/><rect x="2" y="28" width="6" height="3"/><rect x="32" y="9" width="6" height="3"/><rect x="32" y="18.500" width="6" height="3"/><rect x="32" y="28" width="6" height="3"/></g><rect x="6" y="6" width="28" height="28" rx="2.500" fill="#00857a"/><rect x="12" y="12" width="16" height="16" rx="1.500" fill="#00b3a4"/>`),
+  // ── 트럭 ──────────────────────────────────────────
+  truck: truckSide('M4 12h20v15H4ZM26 17h6l5 5v5H26Z', [11, 31]),
+  truck_hauler: truckSide('M7 14h15v13H7ZM24 18h5l4 4.500v4.500h-9Z', [13, 28.500]),
+  truck_cargo: truckSide('M3 10h22v17H3ZM27 15h6l4 5.500v6.500H27Z', [10, 19, 32]),
+  truck_trailer: truckSide('M1 9h25v18H1ZM28 13h6l5 6v8H28Z', [7, 15, 23, 33]),
+  truck_express: truckSide('M3 10h22v17H3ZM7 16.500v4h14v-4ZM27 15h6l4 5.500v6.500H27Z', [10, 32]),
 
-  // ── 도구 (한국 도로표지 형태) ─────────────────────
-  t_select: S(`<path d="M10 4l21 16-9.500 1.500L27 34l-5 2.200-5.500-12.500L10 30z" fill="#fff" stroke="#23282c" stroke-width="2.200" stroke-linejoin="round"/>`),
-  t_yield: S(`<path d="M3 5h34L20 36z" fill="#fff" stroke="#d9352b" stroke-width="4" stroke-linejoin="round"/><text x="20" y="20" text-anchor="middle" font-size="9.500" font-weight="800" fill="#1d2226" font-family="sans-serif">양보</text>`),
-  t_stop: S(`<path d="M3 5h34L20 36z" fill="#d9352b" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M3 5h34L20 36z" fill="none" stroke="#a81f17" stroke-width="1" stroke-linejoin="round"/><text x="20" y="20" text-anchor="middle" font-size="9.500" font-weight="800" fill="#fff" font-family="sans-serif">정지</text>`),
-  t_signal: S(`<rect x="1.500" y="13" width="37" height="14" rx="3.500" fill="#23282c"/><circle cx="9" cy="20" r="4" fill="#e8402f"/><circle cx="20" cy="20" r="4" fill="#f6b01e"/><circle cx="31" cy="20" r="4" fill="#27c46b"/><rect x="18.500" y="27" width="3" height="10" fill="#54606a"/><rect x="18.500" y="3" width="3" height="10" fill="#54606a"/>`),
-  t_roundabout: S(`<circle cx="20" cy="20" r="16.500" fill="#0b4ea2"/><g fill="none" stroke="#fff" stroke-width="3.200"><path d="M20 9a11 11 0 0 1 9.500 5.500"/><path d="M29.500 25.500A11 11 0 0 1 10.500 25.500"/><path d="M10.500 14.500A11 11 0 0 1 14 10.800"/></g><g fill="#fff"><path d="M32.600 12l-1.200 7-5.800-3.800z"/><path d="M7 29.800l-.8-7 6.400 2.600z"/><path d="M11.200 5.600l6.600 2.200-4.400 5.200z"/></g>`),
-  t_interchange: S(`<g fill="none" stroke="#23282c" stroke-width="8"><path d="M20 3v34M3 20h34"/></g><g fill="none" stroke="#f6b01e" stroke-width="4.600"><path d="M3 20h34"/></g><g fill="none" stroke="#54606a" stroke-width="3.800"><circle cx="11" cy="11" r="6"/><circle cx="29" cy="11" r="6"/><circle cx="11" cy="29" r="6"/><circle cx="29" cy="29" r="6"/></g><path d="M20 3v34" stroke="#fff" stroke-width="4.600"/>`),
-  t_lane: S(`<rect x="5" y="2" width="22" height="36" fill="#3a4147"/><path d="M16 4v6M16 15v6M16 26v6" stroke="#fff" stroke-width="2.200"/><path d="M7 2v36M25 2v36" stroke="#f6b01e" stroke-width="1.800"/><circle cx="29" cy="28" r="9.500" fill="#17a673" stroke="#fff" stroke-width="2"/><path d="M29 22.500v11M23.500 28h11" stroke="#fff" stroke-width="3" stroke-linecap="round"/>`),
-  t_remove: S(`<path d="M14 7h12l7 26H7z" fill="#f08a24"/><path d="M12.200 14h15.600l1.300 6H10.900z" fill="#fff"/><path d="M9.300 26h21.400l1 5H8.300z" fill="#fff"/><rect x="3" y="32" width="34" height="5" rx="1.500" fill="#23282c"/>`),
-  tow: S(`<path d="M2 20h19v-7h7l6 7h4v11H2z" fill="#f6b01e"/><path d="M23.500 15.500h3.700l3.300 4.500h-7z" fill="#d6edf5"/><path d="M4 20 15 7" stroke="#23282c" stroke-width="2.400"/><path d="M15 7v9" stroke="#23282c" stroke-width="1.600"/><path d="M12 16h6c0 3-6 3-6 0z" fill="#23282c"/><circle cx="10" cy="31" r="4.500" fill="#23282c"/><circle cx="29" cy="31" r="4.500" fill="#23282c"/><rect x="22" y="9" width="7" height="3" rx="1" fill="#e8402f"/>`),
+  // ── 연구 ──────────────────────────────────────────
+  won: S(line('M8 9 13.500 31 20 14 26.500 31 32 9', 3.2) + line('M5 17.500H35M5 23.500H35', 2.6)),
+  money: S(line('M8 9 13.500 31 20 14 26.500 31 32 9', 3.2) + line('M5 17.500H35M5 23.500H35', 2.6)),
+  engine: S(line('M9 9 20 20 9 31M21 9 32 20 21 31', 4.2)),
+  crate: S(line('M7 13 20 6 33 13V28L20 35 7 28ZM7 13 20 20 33 13M20 20V35', 3)),
+  forklift: S(line('M13 33V8M6 15 13 8 20 15M27 7V32M20 25 27 32 34 25', 3.4)),
+  clock: S(ring(20, 20, 14.500) + line('M20 11V20.500L26.500 24.500', 3.4)),
+  nav: S(solid('M20 4C12.500 4 7 10 7 16.500 7 25.500 20 36.500 20 36.500S33 25.500 33 16.500C33 10 27.500 4 20 4ZM20 11a5.500 5.500 0 1 0 0 11a5.500 5.500 0 1 0 0-11Z')),
+  smartsig: S(`<rect x="6" y="6" width="13" height="28" rx="5.500" fill="none" stroke="currentColor" stroke-width="3"/>${dot(12.500, 13, 2.600)}${dot(12.500, 20, 2.600)}${dot(12.500, 27, 2.600)}` + line('M25 14a8.500 8.500 0 0 1 0 12M30.500 9.500a15 15 0 0 1 0 21', 3)),
+  auto: S(line('M33 20A13 13 0 0 1 10.500 29M7 20A13 13 0 0 1 29.500 11', 3.6) + solid('M28 3.500 34.500 12.500 24.500 14.500ZM12 36.500 5.500 27.500 15.500 25.500Z')),
+  roundabout2: S(ring(20, 20, 15, 3.2) + ring(20, 20, 7.500, 3.2)),
+  warn: S(solid('M20 4 38 35H2ZM18 14v11h4V14ZM18 27.500v4h4v-4Z')),
+  jam: S(`<rect x="3" y="15" width="10" height="10" rx="2" fill="currentColor"/><rect x="15" y="15" width="10" height="10" rx="2" fill="currentColor"/><rect x="27" y="15" width="10" height="10" rx="2" fill="currentColor"/>`),
+  lock: S(line('M12.500 18v-5a7.500 7.500 0 0 1 15 0v5', 3.4) + `<rect x="8" y="18" width="24" height="17" rx="3" fill="currentColor"/>`),
+  research: S(line('M15.500 5H24.500M17 5V16L7.500 31.500C6.500 34 8 35.500 10.500 35.500H29.500C32 35.500 33.500 34 32.500 31.500L23 16V5', 3) + solid('M13 26h14l3.500 6.500c.5 1 0 1.500-1 1.500H10.500c-1 0-1.500-.5-1-1.500Z')),
+  build: S(line('M3 27H37', 3.6) + line('M5 27C5 15 15 11 20 11S35 15 35 27', 3.2) + line('M12.500 27V14.500M20 27V11M27.500 27V14.500', 2.600)),
+  list: S(line('M8 11H32M8 20H32M8 29H32', 3.8)),
+  gear: S(solid(gearPath())),
+  star: S(solid('M20 3.500 25 15 37.500 16.200 28 24.500 30.800 36.500 20 30.200 9.200 36.500 12 24.500 2.500 16.200 15 15Z')),
+  ship: S(solid('M4 23H36L31 34H9Z') + line('M20 6V21M20 8 30 18H20', 3)),
+  bridge: S(line('M3 27H37', 3.6) + line('M5 27C5 15 15 11 20 11S35 15 35 27', 3.2) + line('M12.500 27V14.500M20 27V11M27.500 27V14.500', 2.600)),
+  bypass: S(line('M7 35C7 17 33 23 33 5', 4.2)),
 
-  // ── 트럭 측면 ─────────────────────────────────────
-  truck_hauler: S(`<rect x="2" y="15" width="21" height="13" fill="#d7dee3"/><rect x="2" y="15" width="21" height="2.500" fill="#aab4bb"/><path d="M23 12h6c2 0 3 1 4 3l4 6v7H23z" fill="#1f6fd1"/><path d="M26 14.500h3c1 0 1.800.6 2.300 1.500l2.700 4.500h-8z" fill="#d6edf5"/><rect x="2" y="28" width="35" height="2.500" fill="#2b2f33"/><circle cx="10" cy="31" r="4" fill="#2b2f33"/><circle cx="10" cy="31" r="1.500" fill="#c9d1d7"/><circle cx="29" cy="31" r="4" fill="#2b2f33"/><circle cx="29" cy="31" r="1.500" fill="#c9d1d7"/>`),
-  truck_cargo: S(`<rect x="1" y="9" width="24" height="19" fill="#f08a24"/><path d="M1 13h24M1 18h24M1 23h24" stroke="#c76b12" stroke-width="1"/><path d="M25 11h6c2 0 3 1 4 3l4 7v7H25z" fill="#17a673"/><path d="M28 13.500h3c1 0 1.800.6 2.300 1.500l2.700 5h-8z" fill="#d6edf5"/><rect x="1" y="28" width="38" height="2.500" fill="#2b2f33"/><circle cx="8" cy="31.500" r="4" fill="#2b2f33"/><circle cx="16" cy="31.500" r="4" fill="#2b2f33"/><circle cx="31" cy="31.500" r="4" fill="#2b2f33"/>`),
-  truck_trailer: S(`<rect x="0.500" y="8" width="27" height="17" fill="#0b4ea2"/><path d="M0.500 21h27" stroke="#f6b01e" stroke-width="2"/><rect x="0.500" y="25" width="27" height="2" fill="#2b2f33"/><rect x="22" y="27" width="11" height="2.500" fill="#2b2f33"/><path d="M29 10h5c2 0 3 1 3.500 3l2 8v6.500H29z" fill="#d9402f"/><path d="M31 12.500h3c1 0 1.500.5 2 1.500l1.500 5H31z" fill="#d6edf5"/><circle cx="5" cy="31" r="3.800" fill="#2b2f33"/><circle cx="13" cy="31" r="3.800" fill="#2b2f33"/><circle cx="26" cy="31" r="3.800" fill="#2b2f33"/><circle cx="34" cy="31" r="3.800" fill="#2b2f33"/>`),
-  truck_express: S(`<path d="M1 12l24-3v19H1z" fill="#fff" stroke="#aab4bb"/><path d="M1 19l24-3v5l-24 3z" fill="#00b3a4"/><path d="M25 11h5c3 0 5 2 6 4l3 6v7H25z" fill="#00857a"/><path d="M28 13.500h2.500c1.500 0 2.800.9 3.400 2l2 4.500H28z" fill="#d6edf5"/><rect x="1" y="28" width="38" height="2.500" fill="#2b2f33"/><circle cx="9" cy="31" r="4" fill="#2b2f33"/><circle cx="30" cy="31" r="4" fill="#2b2f33"/><path d="M3 34h-3M6 37H1" stroke="#00b3a4" stroke-width="1.500"/>`),
-
-  // ── UI ───────────────────────────────────────────
-  won: S(`<circle cx="20" cy="20" r="17" fill="#f6b01e"/><circle cx="20" cy="20" r="13.500" fill="none" stroke="#c98d12" stroke-width="1.500"/><path d="M11 11l5.500 18L20 16l3.500 13L29 11M9.500 18h21M9.500 23h21" stroke="#7a5608" stroke-width="2.200" fill="none" stroke-linejoin="round"/>`),
-  money: S(`<circle cx="20" cy="20" r="17" fill="#f6b01e"/><path d="M11 11l5.500 18L20 16l3.500 13L29 11M9.500 18h21M9.500 23h21" stroke="#7a5608" stroke-width="2.200" fill="none" stroke-linejoin="round"/>`),
-  engine: S(`<rect x="8" y="12" width="22" height="19" rx="2" fill="#54606a"/><rect x="13" y="6" width="12" height="6" fill="#3a4147"/><rect x="11" y="4" width="16" height="3" rx="1" fill="#23282c"/><path d="M30 17h5v-3h3v12h-3v-3h-5zM8 17H4v8h4z" fill="#3a4147"/><path d="M21 15l-6 9h4l-2 6 7-9h-4z" fill="#f6b01e"/>`),
-  crate: S(`<rect x="5" y="9" width="30" height="27" rx="1.500" fill="#c98b4a"/><path d="M5 9h30v5H5zM5 31h30v5H5z" fill="#94633a"/><path d="M8 14l24 17M32 14 8 31" stroke="#94633a" stroke-width="3"/>`),
-  forklift: S(`<path d="M5 28V14h12l6 7v7z" fill="#f6b01e"/><path d="M8 16h7.500l4 5H8z" fill="#d6edf5"/><path d="M26 4v28h9v-2.500h-6.500V4z" fill="#23282c"/><rect x="28" y="21" width="9" height="7" fill="#c98b4a"/><circle cx="10" cy="31" r="4.500" fill="#23282c"/><circle cx="21" cy="31" r="4" fill="#23282c"/>`),
-  clock: S(`<circle cx="20" cy="20" r="16.500" fill="#fff" stroke="#23282c" stroke-width="3"/><path d="M20 10v10.500l7 4" stroke="#0b6b4f" stroke-width="3" fill="none" stroke-linecap="round"/>`),
-  nav: S(`<path d="M20 2c-7 0-12.500 5.300-12.500 12 0 9 12.500 24 12.500 24s12.500-15 12.500-24C32.500 7.300 27 2 20 2z" fill="#d9352b"/><circle cx="20" cy="14" r="5" fill="#fff"/>`),
-  smartsig: S(`<rect x="1.500" y="10" width="37" height="14" rx="3.500" fill="#23282c"/><circle cx="9" cy="17" r="4" fill="#e8402f"/><circle cx="20" cy="17" r="4" fill="#f6b01e"/><circle cx="31" cy="17" r="4" fill="#27c46b"/><path d="M6 30c4-4 8 4 12 0s8 4 16 0" stroke="#00b3a4" stroke-width="2.800" fill="none" stroke-linecap="round"/>`),
-  auto: S(`<path d="M34 19a14 14 0 0 0-25-8" fill="none" stroke="#0b6b4f" stroke-width="3.600" stroke-linecap="round"/><path d="M5 5v9h9z" fill="#0b6b4f"/><path d="M6 21a14 14 0 0 0 25 8" fill="none" stroke="#0b6b4f" stroke-width="3.600" stroke-linecap="round"/><path d="M35 35v-9h-9z" fill="#0b6b4f"/>`),
-  roundabout2: S(`<circle cx="20" cy="20" r="17" fill="#0b4ea2"/><circle cx="20" cy="20" r="11.500" fill="none" stroke="#fff" stroke-width="2.600"/><circle cx="20" cy="20" r="6" fill="none" stroke="#fff" stroke-width="2.600"/>`),
-  truck: S(`<rect x="2" y="13" width="21" height="14" fill="#fff"/><path d="M23 15h6c2 0 3 1 4 3l4 5v5H23z" fill="#fff"/><circle cx="10" cy="30" r="4" fill="#fff" stroke="#0b6b4f" stroke-width="1.600"/><circle cx="29" cy="30" r="4" fill="#fff" stroke="#0b6b4f" stroke-width="1.600"/>`),
-  warn: S(`<path d="M20 4 38 35H2z" fill="#f6b01e" stroke="#23282c" stroke-width="2.200" stroke-linejoin="round"/><rect x="18" y="14" width="4" height="11" rx="1.500" fill="#23282c"/><circle cx="20" cy="30" r="2.300" fill="#23282c"/>`),
-  jam: S(`<rect x="3" y="21" width="16" height="9" rx="2" fill="#d9352b"/><rect x="21" y="21" width="16" height="9" rx="2" fill="#d9352b"/><rect x="11" y="9" width="18" height="9" rx="2" fill="#f6b01e"/><circle cx="7" cy="31" r="2.500" fill="#23282c"/><circle cx="15" cy="31" r="2.500" fill="#23282c"/><circle cx="25" cy="31" r="2.500" fill="#23282c"/><circle cx="33" cy="31" r="2.500" fill="#23282c"/>`),
-  lock: S(`<rect x="8" y="17" width="24" height="19" rx="3" fill="#54606a"/><path d="M13 17v-5a7 7 0 0 1 14 0v5" fill="none" stroke="#54606a" stroke-width="4"/><circle cx="20" cy="26" r="3" fill="#fff"/>`),
-  research: S(`<path d="M16 3h8v3h-1v9l10 17c1.500 3-.5 5-3 5H10c-2.500 0-4.500-2-3-5l10-17V6h-1z" fill="#fff"/><path d="M12 24h16l5 8c1.500 3-.5 5-3 5H10c-2.500 0-4.500-2-3-5z" fill="#f6b01e"/>`),
-  build: S(`<path d="M5 34 21 18l4 4L9 38z" fill="#fff"/><path d="M19 8c4-5 11-6 16-3l-8 7 2 5 5 1 4-7c2 5 1 11-4 15-4 3-9 3-13 1z" fill="#f6b01e"/>`),
-  gear: S(`<path d="M17.200 2h5.600l.9 4.600 3.200 1.300 3.900-2.600 4 4-2.700 3.800 1.400 3.300 4.500.8v5.600l-4.500.9-1.400 3.200 2.700 3.900-4 4-3.900-2.700-3.200 1.400-.9 4.500h-5.600l-.9-4.500-3.300-1.400-3.800 2.700-4-4 2.600-3.900-1.300-3.200L2 22.800v-5.600l4.600-.8 1.300-3.300-2.600-3.800 4-4 3.800 2.600 3.300-1.300z" fill="#fff"/><circle cx="20" cy="20" r="5.500" fill="#0b6b4f"/>`),
+  // ── 공통 ──────────────────────────────────────────
   pause: S(`<rect x="9" y="6" width="8" height="28" rx="1.500" fill="currentColor"/><rect x="23" y="6" width="8" height="28" rx="1.500" fill="currentColor"/>`),
   close: S(`<path d="M9 9l22 22M31 9 9 31" stroke="currentColor" stroke-width="4.500" stroke-linecap="round"/>`),
   chevron: S(`<path d="M14 7l13 13-13 13" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`),
@@ -88,51 +115,20 @@ export const ICONS = {
   minus: S(`<path d="M7 20h26" stroke="currentColor" stroke-width="5.500" stroke-linecap="round"/>`),
   sound: S(`<path d="M5 15h7l10-8v26l-10-8H5z" fill="currentColor"/><path d="M27 13c3 4 3 10 0 14M31 8c6 7 6 17 0 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>`),
   mute: S(`<path d="M5 15h7l10-8v26l-10-8H5z" fill="currentColor"/><path d="M28 15l9 10M37 15l-9 10" stroke="currentColor" stroke-width="3.200" stroke-linecap="round"/>`),
-  star: S(`<path d="M20 3l5.200 11 12 1.600-8.800 8.300 2.300 12L20 30l-10.700 5.900 2.300-12-8.800-8.300 12-1.600z" fill="#f6b01e"/>`),
   home: S(`<path d="M20 4 3 19h5v17h9V25h6v11h9V19h5z" fill="currentColor"/>`),
-  ship: S(`<path d="M2 24h36l-5 11H7z" fill="#fff"/><rect x="12" y="15" width="16" height="9" fill="#fff"/><rect x="17" y="8" width="6" height="7" fill="#fff"/>`),
-  bridge: S(`<path d="M1 33c3-2 5-2 8 0s5 2 8 0 5-2 8 0 5 2 7 0 4-1 7 0v6H1z" fill="#1f9ec0"/><rect x="11" y="4" width="3.5" height="29" fill="#54606a"/><rect x="26" y="4" width="3.5" height="29" fill="#54606a"/><rect x="1" y="24" width="38" height="3.5" fill="#23282c"/><path d="M12.7 6 2 24M12.700 6l8 18M12.700 12 6 24M12.700 12l4.500 12M27.800 6l-8 18M27.800 6 38 24M27.800 12l-4.500 12M27.800 12 34 24" stroke="#f08a24" stroke-width="1.100" fill="none"/>`),
-  bypass: S(`<path d="M5 37C5 22 35 20 35 3" fill="none" stroke="#23282c" stroke-width="10"/><path d="M5 37C5 22 35 20 35 3" fill="none" stroke="#f6b01e" stroke-width="7"/><path d="M5 37C5 22 35 20 35 3" fill="none" stroke="#fff" stroke-width="1.400" stroke-dasharray="4 4"/>`),
 };
+for (const kind of Object.keys(KIND_SHAPE)) ICONS[kind] = shapeSvg(KIND_SHAPE[kind]);
+for (const id of Object.keys(GOODS)) ICONS[`g_${id}`] = S(`<rect x="8" y="8" width="24" height="24" rx="4" fill="${GOODS[id].color}"/>`);
 
-// 고속도로·국도 노선 방패 (실제 표지 형태). 번호를 받아 SVG 문자열을 만든다.
-export function routeShield(kind, ref) {
+// 도로 번호 배지. 고속도로는 검은 원, 국도는 테두리만
+export function routeBadge(kind, ref) {
   const num = String(ref || '').slice(0, 3);
-  const fs = num.length >= 3 ? 11 : 13.5;
-  if (kind === 'x') {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 38"><path d="M3 3c5 2 10 2 15 0 5 2 10 2 15 0 2 12 1 26-15 33C2 29 1 15 3 3z" fill="#0b4ea2" stroke="#fff" stroke-width="1.500"/><path d="M3 3c5 2 10 2 15 0 5 2 10 2 15 0l.8 8H2.200z" fill="#d9352b"/><text x="18" y="27" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#fff" font-family="sans-serif">${num}</text></svg>`;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 38"><path d="M3 4h30c1 12 0 24-15 32C3 28 2 16 3 4z" fill="#0b4ea2" stroke="#fff" stroke-width="1.500"/><text x="18" y="24" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#fff" font-family="sans-serif">${num}</text></svg>`;
-}
-
-// 캔버스용 스프라이트 캐시. 비동기로 래스터화되며, 준비 전에는 null을 돌려준다.
-const sprites = new Map();
-const pending = new Set();
-let onReady = null;
-export function setSpriteReadyCallback(fn) { onReady = fn; }
-
-export function sprite(name, px) {
-  const size = Math.ceil(px);
-  const key = `${name}@${size}`;
-  const hit = sprites.get(key);
-  if (hit) return hit;
-  if (pending.has(key)) return null;
-  const src = ICONS[name];
-  if (!src || typeof Image === 'undefined') return null;
-  pending.add(key);
-  const img = new Image();
-  const svg = src.replace('<svg ', `<svg width="${size}" height="${size}" `);
-  img.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = size; c.height = size;
-    c.getContext('2d').drawImage(img, 0, 0, size, size);
-    sprites.set(key, c);
-    pending.delete(key);
-    if (onReady) onReady();
-  };
-  img.onerror = () => pending.delete(key);
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  return null;
+  const fs = num.length >= 3 ? 13 : 16;
+  const filled = kind === 'x';
+  const disc = filled
+    ? '<circle cx="20" cy="20" r="18" fill="var(--ink, #2a2a28)"/>'
+    : '<circle cx="20" cy="20" r="16.500" fill="none" stroke="var(--ink, #2a2a28)" stroke-width="3"/>';
+  return S(`${disc}<text x="20" y="${20 + fs * 0.36}" text-anchor="middle" font-size="${fs}" font-weight="700" font-family="Helvetica Neue, Arial, sans-serif" fill="${filled ? 'var(--paper, #f6f1e3)' : 'var(--ink, #2a2a28)'}">${num}</text>`);
 }
 
 // DOM에서 쓰는 HTML

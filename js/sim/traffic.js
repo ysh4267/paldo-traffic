@@ -50,7 +50,22 @@ export class Vehicle {
     this.tripStart = 0;
     this.retire = false;
     this.seg = { seg: 0 };
+    this.segRear = { seg: 0 };
     this.bay = null;
+    this.trail = [null, null, null]; // 막 지나온 구간들 (뒤꽁무니 위치를 찾을 때 쓴다)
+    this.dOdo = null;    // 화면에 그리는 주행 거리
+    this.dV = 0;
+    this.dT = 0;
+  }
+  passed(seg) {
+    const t = this.trail;
+    t[2] = t[1];
+    t[1] = t[0];
+    t[0] = seg;
+  }
+  clearTrail() {
+    this.trail[0] = this.trail[1] = this.trail[2] = null;
+    this.dOdo = null;
   }
 }
 
@@ -130,6 +145,7 @@ export class Traffic {
     v.granted = false;
     v.state = 'road';
     v.seg.seg = 0;
+    v.clearTrail();
     lane.veh.push(v);
     this.activate(lane);
     return true;
@@ -155,6 +171,7 @@ export class Traffic {
     if (ahead && ahead.s - ahead.len - GAP < s) return false;
     if (behind && s - v.len - GAP < behind.s) return false;
     lane.veh.splice(pos, 0, v);
+    v.clearTrail();
     v.lane = lane; v.conn = null; v.s = s; v.v = edge.speed * v.speedF * 0.8; v.pi = edgeIndex; v.state = 'road'; v.granted = false;
     this.activate(lane);
     return true;
@@ -510,6 +527,7 @@ export class Traffic {
       tl.pending = Math.max(0, tl.pending - (c.len + GAP));
       const t = tl.tail();
       c.s = t ? Math.min(over, t.s - t.len - GAP) : over;
+      c.passed(conn);
       c.conn = null;
       c.lane = tl;
       c.pi++;
@@ -596,6 +614,7 @@ export class Traffic {
       vs.shift();
       const conn = f.nextConn;
       f.s -= L;
+      f.passed(lane);
       f.lane = null;
       f.conn = conn;
       lane.lastExit = f;
@@ -860,5 +879,21 @@ export class Traffic {
     if (v.lane) return v.lane.edge.sample(v.s, laneOffset(v.lane.index), out, v.seg);
     if (v.conn) return v.conn.sample(v.s, out);
     return null;
+  }
+
+  // 앞머리에서 back만큼 뒤의 도로 위 위치. 막 지나온 구간까지 거슬러 찾는다 (렌더링용)
+  poseBehind(v, back, out, hint) {
+    let seg = v.lane || v.conn;
+    if (!seg) return null;
+    let s = v.s - back;
+    for (let i = 0; s < 0 && i < 3; i++) {
+      const q = v.trail[i];
+      if (!q) { s = 0; break; }
+      seg = q;
+      s += q.edge ? q.edge.L : q.len;
+    }
+    if (s < 0) s = 0;
+    if (seg.edge) return seg.edge.sample(s, laneOffset(seg.index), out, hint);
+    return seg.sample(s, out);
   }
 }

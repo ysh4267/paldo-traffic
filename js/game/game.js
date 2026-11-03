@@ -103,6 +103,7 @@ export class Game {
     this.money = opts.money ?? START_MONEY;
     this.stage = 0;
     this.routes = new Map();
+    this.routeVer = 0;
     this.techs = new Set();
     this.upg = {};
     for (const u of UPGRADES) this.upg[u.id] = 0;
@@ -608,6 +609,7 @@ export class Game {
     v.state = 'queue';
     v.yardT = 0;
     route.trucks.push(v);
+    if (route.trucks.length === 1) this.routeVer++;
     route.from.yard.push(v);
     route.opened = true;
     return v;
@@ -629,6 +631,7 @@ export class Game {
     v.retire = true;
     this.money += (v.price || 0) * 0.5;
     route.trucks.splice(route.trucks.indexOf(v), 1);
+    if (!route.trucks.length) this.routeVer++;
     return true;
   }
 
@@ -637,13 +640,13 @@ export class Game {
     this.traffic.vehicles.delete(v);
     const r = v.route;
     const i = r.trucks.indexOf(v);
-    if (i >= 0) r.trucks.splice(i, 1);
+    if (i >= 0) { r.trucks.splice(i, 1); if (!r.trucks.length) this.routeVer++; }
   }
   removeTruckFromSim(v) {
     this.traffic.vehicles.delete(v);
     const r = v.route;
     const i = r.trucks.indexOf(v);
-    if (i >= 0) r.trucks.splice(i, 1);
+    if (i >= 0) { r.trucks.splice(i, 1); if (!r.trucks.length) this.routeVer++; }
   }
 
   get truckCount() { return this.traffic.vehicles.size; }

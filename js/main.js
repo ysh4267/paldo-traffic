@@ -36,6 +36,7 @@ class App {
     this.pointers = new Map();
     this.canvas = document.getElementById('map');
     this.mini = document.getElementById('minimap');
+    this.miniBox = document.getElementById('mini');
     this.loadSettings();
     const raw = store.get(SAVE_KEY);
     let save = null;
@@ -138,7 +139,6 @@ class App {
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     this.applyCameraPadding();
     if (wasHidden && window.innerWidth >= 2 && window.innerHeight >= 2) {
-      if (this.ui) this.ui.collapsed = window.innerWidth < 760;
       if (this.started) this.fitToStage(0);
       else this.fitBoxAll(0);
     }
@@ -147,8 +147,9 @@ class App {
   applyCameraPadding() {
     const narrow = window.innerWidth < 760;
     const cam = this.renderer.cam;
-    if (narrow) cam.pad = { l: 8, r: 8, t: 124, b: 120 };
-    else cam.pad = { l: 74, r: 362, t: 106, b: 60 };
+    const card = this.ui && (this.ui.sel || this.ui.listOpen);
+    if (narrow) cam.pad = { l: 8, r: 8, t: 84, b: card ? Math.round(window.innerHeight * 0.46) + 56 : 92 };
+    else cam.pad = { l: 16, r: card ? 336 : 16, t: 60, b: 70 };
   }
 
   regionBox(maxIndex) {
@@ -261,7 +262,7 @@ class App {
       b.innerHTML = iconHtml(icon);
       b.onclick = () => { this.sound.click(); fn(); };
     };
-    const center = () => [window.innerWidth / 2 - 140, window.innerHeight / 2];
+    const center = () => [window.innerWidth / 2, window.innerHeight / 2];
     zoomBtn('z-in', 'plus', () => { const [x, y] = center(); cam().zoomAt(x, y, 0.72); });
     zoomBtn('z-out', 'minus', () => { const [x, y] = center(); cam().zoomAt(x, y, 1.38); });
     zoomBtn('z-all', 'home', () => this.fitToStage(0.7));
@@ -299,22 +300,20 @@ class App {
     base.width = m.width; base.height = m.height;
     const b = base.getContext('2d');
     b.scale(dpr, dpr);
-    b.fillStyle = '#c7e3ef';
+    const pal = this.renderer.pal;
+    b.fillStyle = pal.sea;
     b.fillRect(0, 0, W, H);
     b.setTransform(s * dpr, 0, 0, s * dpr, -x0 * s * dpr, -y0 * s * dpr);
     const P = this.renderer.P;
-    b.fillStyle = '#dcdcd2';
+    b.fillStyle = pal.foreign;
     b.fill(P.north);
     for (const p of P.provinces) {
-      b.fillStyle = p.region <= this.game.stage ? '#7fb56a' : '#eceee4';
+      b.fillStyle = p.region <= this.game.stage ? pal.land : pal.locked;
       b.fill(p.path);
     }
-    b.strokeStyle = 'rgba(40,60,40,.35)';
-    b.lineWidth = 0.9;
-    b.stroke(P.land);
     // 독도
     const d = this.game.data.dokdo;
-    b.fillStyle = '#7fb56a';
+    b.fillStyle = pal.land;
     b.beginPath(); b.arc(d.x, d.y, 3.2, 0, Math.PI * 2); b.fill();
     const u = this.game.data.ulleung;
     b.beginPath(); b.arc(u.x, u.y, 3.2, 0, Math.PI * 2); b.fill();
@@ -331,15 +330,15 @@ class App {
     ctx.setTransform(s * dpr, 0, 0, s * dpr, -x0 * s * dpr, -y0 * s * dpr);
     // 정체 지점
     for (const j of this.game.jams.slice(0, 6)) {
-      ctx.fillStyle = '#e22c1e';
+      ctx.fillStyle = '#d9412b';
       ctx.beginPath();
       ctx.arc(j.node.x, j.node.y, 5, 0, Math.PI * 2);
       ctx.fill();
     }
     const cam = this.renderer.cam;
     const hw = (cam.W / 2) * cam.k, hh = (cam.H / 2) * cam.k;
-    ctx.strokeStyle = '#0b4ea2';
-    ctx.lineWidth = 2.2 / s / dpr * dpr;
+    ctx.strokeStyle = this.renderer.pal.ink;
+    ctx.lineWidth = 1.6 / s;
     ctx.strokeRect(cam.cx - hw, cam.cy - hh, hw * 2, hh * 2);
   }
 
@@ -358,11 +357,11 @@ class App {
         this.save();
       } else if (e.type === 'site') {
         r.baseDirty = true;
-        r.ping(e.site.x, e.site.y, '#0b6b4f');
+        r.ping(e.site.x, e.site.y);
         const icon = e.site.isCity && e.site.kind !== 'dokdo' ? 'city' : e.site.kind;
         ui.toast(icon, `새 거점: ${e.site.name}`, e.site.produces ? '눌러서 트럭을 배치하세요' : '새 납품처가 열렸습니다', () => ui.goSite(e.site));
       } else if (e.type === 'city') {
-        r.ping(e.site.x, e.site.y, '#f6b01e');
+        r.ping(e.site.x, e.site.y);
         r.baseDirty = true;
         if (e.stage >= 2) ui.toast('city', `${josa(e.site.name, '이', '가')} 성장했습니다`, `납품가 +${e.stage * 8}%`, () => ui.goSite(e.site));
       } else if (e.type === 'tech') {
@@ -370,7 +369,7 @@ class App {
         ui.renderDock();
       } else if (e.type === 'project') {
         r.baseDirty = true;
-        ui.showBanner('도로 개통', e.project.name, e.project.desc, true);
+        ui.showBanner('도로 개통', e.project.name, e.project.desc);
         ui.toast(e.project.kind === 'bridge' ? 'bridge' : 'bypass', `${e.project.name} 개통`, '트럭이 새 길을 이용합니다');
       } else if (e.type === 'first') {
         ui.toast('won', '첫 납품 대금을 받았습니다', '돈이 모이면 트럭을 더 사세요');
@@ -413,9 +412,11 @@ class App {
     this.miniT += dt;
     if (this.miniT >= 0.25) {
       this.miniT = 0;
-      this.drawMini();
+      // 미니맵은 확대해서 전체가 안 보일 때만 꺼낸다
+      const show = this.renderer.cam.k < 0.09 && !this.game.flags.tutorial;
+      this.miniBox.classList.toggle('show', show);
+      if (show) this.drawMini();
     }
-    this.ui.vmsTick(dt);
     this.saveT += dt;
     if (this.saveT >= 20) { this.saveT = 0; this.save(); }
   }
