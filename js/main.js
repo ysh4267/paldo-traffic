@@ -28,7 +28,9 @@ class App {
     this.saveT = 0;
     this.miniT = 0;
     this.started = false;
-    this.hiddenAt = 0;
+    this.lastFrame = 0;
+    this.lastBg = performance.now();
+    this.awayBank = 0;
     this.pointers = new Map();
     this.canvas = document.getElementById('map');
     this.mini = document.getElementById('minimap');
@@ -42,6 +44,7 @@ class App {
     document.addEventListener('visibilitychange', () => this.onVisibility());
     window.addEventListener('beforeunload', () => this.save());
     requestAnimationFrame((t) => this.loop(t));
+    setInterval(() => this.backgroundTick(), 500);
   }
 
   boot(save) {
@@ -372,28 +375,24 @@ class App {
   }
 
   // ── 루프 ───────────────────────────────────────────
-  loop(t) {
-    const dt = Math.min(0.1, (t - this.last) / 1000);
-    this.last = t;
-    const g = this.game;
-
-    const running = this.started && (!this.ui.modalName || this.ui.modalName === 'build' || this.ui.modalName === 'research');
-    if (running && this.speed > 0) {
-      this.acc += dt * this.speed;
-      let steps = 0;
-      const maxSteps = 8 * 8;
-      const budgetStart = performance.now();
-      while (this.acc >= STEP && steps < maxSteps) {
-        g.tick(STEP);
-        this.acc -= STEP;
-        steps++;
-        if ((steps & 7) === 0 && performance.now() - budgetStart > 14) { this.acc = 0; break; }
-      }
-      if (this.acc > STEP * 8) this.acc = 0;
+  // 시뮬레이션을 realDt초만큼 진행한다
+  advance(realDt, budgetMs) {
+    const m = this.ui.modalName;
+    const running = this.started && (!m || m === 'build' || m === 'research');
+    if (!running || this.speed === 0) return;
+    this.acc += realDt * this.speed;
+    const start = performance.now();
+    let steps = 0;
+    while (this.acc >= STEP) {
+      this.game.tick(STEP);
+      this.acc -= STEP;
+      steps++;
+      if ((steps & 7) === 0 && performance.now() - start > budgetMs) { this.acc = 0; break; }
     }
-    this.handleEvents();
-    this.renderer.frame(dt);
+  }
 
+  slowUpdates(dt) {
+    const g = this.game;
     this.uiT += dt;
     if (this.uiT >= 0.2) {
       this.uiT = 0;
@@ -408,21 +407,48 @@ class App {
     this.ui.vmsTick(dt);
     this.saveT += dt;
     if (this.saveT >= 20) { this.saveT = 0; this.save(); }
+  }
+
+  loop(t) {
+    const dt = Math.min(0.1, (t - this.last) / 1000);
+    this.last = t;
+    this.lastFrame = performance.now();
+    this.settleAway();
+    this.advance(dt, 14);
+    this.handleEvents();
+    this.renderer.frame(dt);
+    this.slowUpdates(dt);
     requestAnimationFrame((q) => this.loop(q));
+  }
+
+  // 창이 가려져 화면 갱신이 멈춰도 트럭은 계속 달린다
+  backgroundTick() {
+    const now = performance.now();
+    const gap = (now - this.lastBg) / 1000;
+    this.lastBg = now;
+    if (now - this.lastFrame < 500) return;
+    const sim = Math.min(gap, 5);
+    this.advance(sim, 120);
+    if (gap > sim && this.started) this.awayBank += gap - sim;
+    this.handleEvents();
+    this.slowUpdates(sim);
+  }
+
+  // 브라우저가 타이머까지 늦춰 못 돌린 시간은 오프라인 수익으로 정산한다
+  settleAway() {
+    if (this.awayBank < 1) return;
+    const res = this.game.applyOffline(this.awayBank);
+    this.awayBank = 0;
+    if (res.seconds >= 90 && !this.ui.modalName) this.ui.openModal('offline', res);
   }
 
   onVisibility() {
     if (document.hidden) {
-      this.hiddenAt = Date.now();
       this.save();
-    } else if (this.hiddenAt) {
-      const away = (Date.now() - this.hiddenAt) / 1000;
-      this.hiddenAt = 0;
+    } else {
       this.last = performance.now();
-      if (away > 90 && this.started && this.game.income > 0) {
-        const res = this.game.applyOffline(away);
-        this.ui.openModal('offline', res);
-      }
+      this.lastBg = this.last;
+      this.settleAway();
     }
   }
 }
