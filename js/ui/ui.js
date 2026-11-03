@@ -607,7 +607,25 @@ export class UI {
     return [head, h('div', { class: 'p-body', key: `body-n${n.id}` }, body)];
   }
 
+  ferryView(r) {
+    const g = this.game;
+    const fy = r.ferryObj;
+    const price = g.ferryPrice(fy);
+    const state = fy.state === 'dock' ? '접안 중' : '운항 중';
+    const a = fy.sideOf(r.a);
+    return [this.head('blue', raw(iconHtml('ship'), 'ico'), r.name, `${Math.round(r.len)}km 뱃길 · ${state}`, () => this.select(null)),
+      h('div', { class: 'p-body', key: `body-f${r.id}` },
+        h('div', { class: 'kv', key: 'kv' },
+          h('div', null, h('small', null, '한 번에 실음'), h('b', null, `${fy.cap}대`)),
+          h('div', null, h('small', null, '지금 실린 트럭'), h('b', null, `${fy.cargo.length}대`)),
+          h('div', null, h('small', null, '운항 횟수'), h('b', null, `${fy.trips}회`))),
+        h('p', { class: 'note', key: 'nt' }, '트럭은 터미널에서 줄을 서서 배를 기다립니다. 배가 작으면 줄이 큰길까지 밀립니다.', a < 0 ? '' : ''),
+        h('button', { class: 'btn up', key: 'up', disabled: g.money < price || fy.cap >= 120, onclick: () => { if (g.buyFerry(fy)) { this.sound.buy(); this.renderInspector(true); } else this.sound.deny(); } }, h('span', null, `카페리 증편 ${fy.cap} → ${fy.cap + 10}대`), h('span', { class: 'price' }, fmtWon(price)))),
+    ];
+  }
+
   roadView(r) {
+    if (r.kind === 'f') return this.ferryView(r);
     const g = this.game;
     const hasShield = r.ref && (r.kind === 'x' || r.kind === 'n') && /^\d+$/.test(r.ref);
     const leading = hasShield ? raw(routeShield(r.kind, r.ref), 'shield') : raw(iconHtml('t_lane'), 'ico');

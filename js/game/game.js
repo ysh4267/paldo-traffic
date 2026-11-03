@@ -402,6 +402,7 @@ export class Game {
     let mult = 1 + this.upg.pay * 0.14;
     if (s.kind === 'city') mult *= 1 + s.cityStage * 0.08;
     if (s.kind === 'dokdo') mult *= 6;
+    mult *= this.boomMult();
     // 정시 여부
     const trip = this.time - v.tripStart;
     const late = trip / v.expected;
@@ -707,6 +708,19 @@ export class Game {
     this.refreshRoutes();
   }
 
+  // ── 뱃길 ──────────────────────────────────────────────
+  ferryPrice(fy) {
+    return 4000 * 10000 * Math.pow(2.2, fy.level || 0) * this.regionScale(Math.max(fy.road.stage, 1));
+  }
+  buyFerry(fy) {
+    const c = this.ferryPrice(fy);
+    if (this.money < c || fy.cap >= 120) return false;
+    this.money -= c;
+    fy.level = (fy.level || 0) + 1;
+    fy.cap += 10;
+    return true;
+  }
+
   // ── 연구 ──────────────────────────────────────────────
   techVisible(t) {
     if (t.stage < this.stage) return true;
@@ -886,6 +900,7 @@ export class Game {
       flags: this.flags,
       towCount: this.towCount,
       lanes, controls, signs,
+      ferries: this.traffic.ferries.filter((f) => f.level).map((f) => [f.road.id, f.level]),
       projects: this.projects.filter((p) => p.built).map((p) => p.id),
       sites: this.sites.filter((s) => s.available).map((s) => ({
         id: s.id, lv: s.level, b: s.bays, st: s.stock, inb: s.inBuf, gr: s.growth, cs: s.cityStage, d: s.delivered,
@@ -926,6 +941,10 @@ export class Game {
       g.traffic.setControl(n, control);
     }
     for (const [id, sign] of save.signs || []) if (g.net.edges[id]) g.net.edges[id].sign = sign;
+    for (const [id, level] of save.ferries || []) {
+      const fy = g.net.roads[id] && g.net.roads[id].ferryObj;
+      if (fy) { fy.level = level; fy.cap += level * 10; }
+    }
     g.applyStage(save.stage, true);
     for (const rec of save.sites || []) {
       const s = g.siteById.get(rec.id);

@@ -1212,7 +1212,7 @@ export class Renderer {
       const tol = 7 * cam.k;
       let best = null, bd = tol;
       for (const r of net.roads) {
-        if (r.kind === 'f' || !r.open) continue;
+        if (!r.open || (r.kind === 'f' && tool !== 'select')) continue;
         if (wx < r.bb[0] - tol || wx > r.bb[2] + tol || wy < r.bb[1] - tol || wy > r.bb[3] + tol) continue;
         const pts = r.pts;
         for (let i = 0; i + 3 < pts.length; i += 2) {
