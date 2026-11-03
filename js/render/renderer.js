@@ -624,20 +624,22 @@ export class Renderer {
   drawCongestion(ctx) {
     const cam = this.cam, net = this.game.net, k = cam.k;
     const close = k < KM_CLOSE;
+    ctx.lineCap = 'butt';
     for (const e of net.edges) {
       if (e.road.kind === 'f' || !e.road.open) continue;
       if (e.count === 0 && e.cong < 0.05) continue;
       if (!this.roadInView(e.road, -this.margin)) continue;
       const c = e.cong;
       let color;
-      if (c > 0.62) color = close ? 'rgba(226,44,30,0.5)' : '#e22c1e';
-      else if (c > 0.3) color = close ? 'rgba(245,158,28,0.42)' : '#f59e1c';
+      if (c > 0.62) color = close ? 'rgba(226,44,30,0.34)' : '#e22c1e';
+      else if (c > 0.3) color = close ? 'rgba(245,158,28,0.26)' : '#f59e1c';
       else if (k < 0.2) continue;
       else color = '#27a55f';
       ctx.strokeStyle = color;
       ctx.lineWidth = Math.max(LANE_W * e.road.lanes, (e.road.kind === 'x' ? 1.7 : 1.3) * k);
       ctx.stroke(this.edgePath(e));
     }
+    ctx.lineCap = 'round';
   }
 
   drawRouteHighlight(ctx) {

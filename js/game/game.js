@@ -129,6 +129,7 @@ export class Game {
     this.autoT = 0;
     this.jamT = 0;
     this.jams = [];
+    this.navTrees = new Map();
     this.startTime = Date.now();
     this.assignOpenOrder();
     this.applyStage(0, true);
@@ -354,7 +355,7 @@ export class Game {
   }
 
   pathFor(route, leg) {
-    if (this.techs.has('nav') && this.navDirty !== this.time) {
+    if (this.techs.has('nav')) {
       const fresh = this.navPath(route, leg);
       if (fresh) return fresh;
     }
@@ -365,12 +366,16 @@ export class Game {
     // 경로 재탐색은 노선·방향별로 몇 초에 한 번만
     const key = leg === 1 ? 'navTo' : 'navBack';
     const stamp = leg === 1 ? 'navToT' : 'navBackT';
-    if (route[key] && this.time - route[stamp] < 6) return route[key];
+    if (route[key] && this.time - route[stamp] < 8) return route[key];
     const start = leg === 1 ? route.from.spurOut : route.to.spurOut;
     const end = leg === 1 ? route.to.spurIn : route.from.spurIn;
     if (!start || !end) return null;
-    const tree = shortestTree(this.net, start, { congestion: true });
-    const p = extractPath(this.net, tree, end);
+    let cached = this.navTrees.get(start.id);
+    if (!cached || this.time - cached.t > 12) {
+      cached = { t: this.time, tree: shortestTree(this.net, start, { congestion: true }) };
+      this.navTrees.set(start.id, cached);
+    }
+    const p = extractPath(this.net, cached.tree, end);
     route[key] = p;
     route[stamp] = this.time;
     return p;
@@ -658,7 +663,6 @@ export class Game {
     if (this.money < c) return false;
     this.money -= c;
     this.traffic.setControl(node, control);
-    this.recomputePaths();
     return true;
   }
   buyRing2(node) {
