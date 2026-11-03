@@ -55,17 +55,17 @@ export const SITE_KIND_NAME = {
 export const START_MONEY = 5000 * MAN;
 // 같은 노선에 한 대 늘 때마다 차고지와 기사 채용비로 오르는 비율
 export const TRUCK_STEP = 0.03;
-// 트럭 4종. price: 첫 대 가격, load: 상하차 시간(초)
+// 트럭 4종. price: 첫 대 가격, load: 상하차 시간(초), acc: 빈 차의 출발 가속, brk: 평소 브레이크 (km/s²)
 export const TRUCKS = [
-  { id: 'hauler', name: '1톤 용달', short: '1톤', cap: 1, speed: 1, len: 0.72, price: 2200 * MAN, load: 1.3, width: 0.2, tech: null, desc: '싸고 작습니다. 기본 트럭' },
-  { id: 'cargo', name: '5톤 카고', short: '5톤', cap: 5, speed: 0.96, len: 1.02, price: 7500 * MAN, load: 1.9, width: 0.24, tech: 'cargo5', desc: '같은 물량을 적은 대수로 나릅니다' },
-  { id: 'trailer', name: '25톤 트레일러', short: '25톤', cap: 25, speed: 0.82, len: 1.8, price: 2.8 * EOK, load: 3, width: 0.27, tech: 'trailer', desc: '가장 많이 싣지만 길고 느립니다' },
-  { id: 'express', name: '특송 윙바디', short: '특송', cap: 8, speed: 1.4, len: 0.98, price: 1.5 * EOK, load: 1.3, width: 0.24, tech: 'express', onTime: 1.15, desc: '빠르고 정시 도착에 강합니다' },
+  { id: 'hauler', name: '1톤 용달', short: '1톤', cap: 1, speed: 1, len: 0.72, price: 2200 * MAN, load: 0.9, width: 0.2, acc: 3.4, brk: 4.6, tech: null, desc: '싸고 작습니다. 기본 트럭' },
+  { id: 'cargo', name: '5톤 카고', short: '5톤', cap: 5, speed: 0.96, len: 1.02, price: 7500 * MAN, load: 1.3, width: 0.24, acc: 2.8, brk: 4.2, tech: 'cargo5', desc: '같은 물량을 적은 대수로 나릅니다' },
+  { id: 'trailer', name: '25톤 트레일러', short: '25톤', cap: 25, speed: 0.82, len: 1.8, price: 2.8 * EOK, load: 2.2, width: 0.27, acc: 1.9, brk: 3.6, tech: 'trailer', desc: '가장 많이 싣지만 길고 느립니다' },
+  { id: 'express', name: '특송 윙바디', short: '특송', cap: 8, speed: 1.4, len: 0.98, price: 1.5 * EOK, load: 0.9, width: 0.24, acc: 3.6, brk: 4.8, tech: 'express', onTime: 1.15, desc: '빠르고 정시 도착에 강합니다' },
 ];
 
 // 권역별 진행 목표 (납품 실적 점수)
-export const REGION_GOAL = [260, 800, 2200, 5000, 11000, 14000, 32000, 70000, 200000];
-export const ENDLESS_GOAL_BASE = 800000;
+export const REGION_GOAL = [200, 620, 1700, 3850, 8500, 10800, 24600, 54000, 154000];
+export const ENDLESS_GOAL_BASE = 620000;
 
 // 일회성 연구
 export const TECHS = [

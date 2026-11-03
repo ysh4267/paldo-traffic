@@ -10,6 +10,8 @@ Rischer Kriebl의 [Incremental Traffic](https://store.steampowered.com/app/54759
 
 - 도로 위의 차는 전부 내 트럭입니다. 트럭을 늘리면 돈을 벌지만 그만큼 길이 막힙니다.
 - 트럭이 다니는 노선은 화물 색 선으로 지도에 나타나, 전국 물류망이 지하철 노선도처럼 자라납니다.
+- 거점마다 주차장이 있어 트럭이 칸에 들어가 멈추고, 후진으로 빠져나와 다시 달립니다.
+- 트럭은 차종과 짐 무게에 따라 가속이 다르고, 브레이크를 미리 밟아 부드럽게 멈춥니다.
 - 차선 단위로 움직이는 시뮬레이션이라 정체, 꼬리물기, 교착이 저절로 생깁니다.
 - 1톤 트럭 ₩2,200만, 신호등 ₩7,300만, 인천대교 ₩2.38조처럼 금액은 실제 시세와 공사비를 바탕으로 했습니다.
 - 양보·정지 표지, 신호등, 회전교차로, 입체교차로, 차로 추가로 정체를 풉니다.
@@ -35,7 +37,7 @@ node tools/serve.mjs 8765
 | `js/ui/` | 패널, 창, 튜토리얼, 효과음과 배경음 재생 |
 | `audio/` | 배경음 |
 | `data/korea.json` | 가공된 지도 데이터 |
-| `tools/` | 지도 데이터 빌드, 밸런스 봇, 교차로 처리량 측정, 노선 점검, 생산 사슬 점검 |
+| `tools/` | 지도 데이터 빌드, 밸런스 봇, 교차로 처리량 측정, 노선 점검, 생산 사슬 점검, 주차장 점검 |
 
 지도 데이터를 다시 만들려면 `node tools/fetch-osm.mjs`로 원본을 받고 `node tools/build-map.mjs`를 실행합니다. 원본은 `.cache/raw/`에 저장되며 저장소에는 올리지 않습니다.
 
@@ -52,7 +54,13 @@ node tools/serve.mjs 8765
 
 ## 배경음
 
-[We Drove All Night](https://opengameart.org/content/we-drove-all-night-game-soundtrack) by Holizna, CC0 (퍼블릭 도메인). 원본 WAV를 128kbps MP3로 변환하고 1dB 낮췄습니다. CC0라 표기 의무는 없지만 만든 사람을 밝혀 둡니다. 효과음은 코드로 합성합니다.
+기타와 피아노 곡 다섯 곡을 차례로 틀며, 모두 OpenGameArt의 CC0 곡입니다. 원본 WAV는 112kbps MP3로 변환하며 곡마다 크기를 맞췄습니다. 표기 의무는 없지만 만든 사람을 밝혀 둡니다. 효과음은 코드로 합성합니다.
+
+- [Sunset Plains](https://opengameart.org/content/sunset-plains), Yoiyami
+- [Piano melody](https://opengameart.org/node/155545), bramd
+- [Wooden Inn](https://opengameart.org/content/wooden-inn), Indieteur
+- [Yoiyami Core Theme – Deep Blue Ambient Piano](https://opengameart.org/content/yoiyami-core-theme-%E2%80%93-deep-blue-ambient-piano), Yoiyami
+- [Serenade Guitar](https://opengameart.org/content/serenade-guitar), Pro Sensory (Alex McCulloch)
 
 ## 금액 기준
 

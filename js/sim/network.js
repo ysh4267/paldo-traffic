@@ -6,7 +6,7 @@ export const MEDIAN = 0.07;
 export const MAX_LANES = { x: 5, n: 4, r: 3, s: 3, f: 1 };
 export const BASE_LANES = { x: 2, n: 1, r: 1, s: 1, f: 1 };
 export const ROAD_SPEED = { x: 1, n: 0.74, r: 0.62, s: 0.5, f: 0.5 };
-export const V0 = 5; // 고속도로 기준 속도 km/s
+export const V0 = 5.6; // 고속도로 기준 속도 km/s
 
 export const laneOffset = (i) => MEDIAN + LANE_W * (i + 0.5);
 
@@ -26,6 +26,15 @@ export class Lane {
   free() {
     const t = this.tail();
     return (t ? Math.min(t.s - t.len, this.edge.L) : this.edge.L) - this.pending;
+  }
+  // 허가받은 차가 닿을 즈음의 빈 공간. 달리는 맨 뒤 차는 그때쯤 더 가 있다.
+  // 앞이 막혀 있으면 그만큼 못 가므로, 줄이 있는 차로에 잘못 들어가 교차로를 막는 일은 없다
+  freeSoon() {
+    const vs = this.veh, n = vs.length;
+    if (!n) return this.edge.L - this.pending;
+    const t = vs[n - 1];
+    const room = n > 1 ? vs[n - 2].s - vs[n - 2].len - t.s - 0.32 : this.edge.L - t.s - 3;
+    return Math.min(t.s - t.len + Math.min(t.v * 0.7, Math.max(0, room)), this.edge.L) - this.pending;
   }
 }
 
@@ -177,22 +186,14 @@ export class Turn {
   }
 }
 
-// 두 차로를 잇는 교차로 내부 경로
-export class Conn {
-  constructor(fromLane, toLane, pts) {
-    this.fromLane = fromLane;
-    this.toLane = toLane;
+// 좌표열 하나로 된 경로
+export class Polyline {
+  constructor(pts) {
     this.pts = pts;              // [x,y,...]
     const n = pts.length / 2;
     this.cum = new Float64Array(n);
     for (let i = 1; i < n; i++) this.cum[i] = this.cum[i - 1] + Math.hypot(pts[i * 2] - pts[i * 2 - 2], pts[i * 2 + 1] - pts[i * 2 - 1]);
     this.len = Math.max(0.2, this.cum[n - 1]);
-    this.veh = [];
-    this.active = false;
-    this.ringS0 = 0;  // 회전교차로 구간 시작 s
-    this.ringS1 = 0;  // 회전교차로 구간 끝 s
-    this.ringP0 = 0;  // 진입 지점의 원주 좌표
-    this.ring = null;
   }
   sample(s, out) {
     const cum = this.cum, pts = this.pts, n = cum.length;
@@ -210,6 +211,21 @@ export class Conn {
     out[2] = dx / l;
     out[3] = dy / l;
     return out;
+  }
+}
+
+// 두 차로를 잇는 교차로 내부 경로
+export class Conn extends Polyline {
+  constructor(fromLane, toLane, pts) {
+    super(pts);
+    this.fromLane = fromLane;
+    this.toLane = toLane;
+    this.veh = [];
+    this.active = false;
+    this.ringS0 = 0;  // 회전교차로 구간 시작 s
+    this.ringS1 = 0;  // 회전교차로 구간 끝 s
+    this.ringP0 = 0;  // 진입 지점의 원주 좌표
+    this.ring = null;
   }
 }
 
@@ -466,7 +482,7 @@ export class Network {
   nodeOfSite(site) { return this.nodes[site.node]; }
 }
 
-function bezier(x0, y0, tx0, ty0, x1, y1, tx1, ty1, n) {
+export function bezier(x0, y0, tx0, ty0, x1, y1, tx1, ty1, n) {
   const d = Math.hypot(x1 - x0, y1 - y0);
   const k = Math.min(d * 0.42, 2.2);
   const c1x = x0 + tx0 * k, c1y = y0 + ty0 * k;

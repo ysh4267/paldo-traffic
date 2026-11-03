@@ -2,6 +2,7 @@
 // 평소에는 돈과 목표만 보이고, 나머지 수치는 문제가 생기거나 직접 열어 볼 때만 나타난다.
 import { h, ico, raw, patch } from './dom.js';
 import { iconHtml, routeBadge, siteIcon } from '../render/art.js';
+import { MUSIC_TRACKS } from './audio.js';
 import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, fmtWon, fmtKo, fmtTon, fmtTime, josa, PROJECT_COST, LANE_PRICE_PER_KM } from '../game/defs.js';
 
 export const TOOLS = [
@@ -53,6 +54,7 @@ export class UI {
     this.coachStep = 0;
     this.coachOff = false;
     this.el.goal.onclick = () => this.toggleStats();
+    this.sound.onTrack = () => { if (this.modalName === 'settings') this.renderModal(); };
     this.bindTooltips();
     this.bindKeys();
   }
@@ -61,9 +63,11 @@ export class UI {
     const tip = this.el.tip;
     document.addEventListener('pointerover', (e) => {
       const t = e.target.closest && e.target.closest('[data-tip]');
-      if (!t || e.pointerType === 'touch') { tip.hidden = true; return; }
+      if (!t || e.pointerType === 'touch') { this.tipFor = null; tip.classList.remove('show'); return; }
+      if (t === this.tipFor) return;
+      this.tipFor = t;
       tip.textContent = t.getAttribute('data-tip');
-      tip.hidden = false;
+      tip.classList.add('show');
       const rc = t.getBoundingClientRect();
       const w = tip.offsetWidth, hh = tip.offsetHeight;
       let x = rc.left + rc.width / 2 - w / 2, y = rc.bottom + 8;
@@ -282,7 +286,7 @@ export class UI {
     if (g.deliveries >= 30 && g.onTimeRate < 0.75) alerts.push(`정시 ${Math.round(g.onTimeRate * 100)}%`);
     const kids = [
       h('button', { class: `money${this.showStats ? ' on' : ''}`, key: 'money', onclick: () => this.toggleStats(), 'aria-label': '자세한 통계', 'data-tip': '눌러서 자세한 통계 보기' },
-        h('strong', null, fmtWon(g.money)),
+        h('strong', null, this.moneyText || fmtWon(g.money)),
         h('small', null, g.income > 0 ? `+${fmtWon(g.income * 60)}/분` : '아직 수익 없음'),
         alerts.length > 0 && h('em', null, alerts.join(' · '))),
       this.showStats && this.statsCard(),
@@ -321,12 +325,12 @@ export class UI {
     const researchReady = TECHS.some((t) => !g.techs.has(t.id) && g.techVisible(t) && g.money >= t.cost)
       || UPGRADES.some((u) => g.upg[u.id] < u.max && g.money >= g.upgradeCostOf(u.id));
     const buildReady = g.projects.some((p) => g.projectAvailable(p) && g.money >= g.projectPrice(p));
-    const btn = (icon, tip, onclick, dot, on) => h('button', { key: tip, class: on ? 'on' : '', onclick, 'data-tip': tip, 'aria-label': tip }, ico(icon), dot && h('i', { class: 'dot' }));
+    const btn = (icon, tip, onclick, dot, on) => h('button', { key: icon, class: on ? 'on' : '', onclick, 'data-tip': tip, 'aria-label': tip }, ico(icon), dot && h('i', { class: 'dot' }));
     patch(this.el.menu, [
       btn('research', '연구 (R)', () => this.openModal('research'), researchReady),
       btn('build', '우회도로·대교 건설 (B)', () => this.openModal('build'), buildReady),
       btn('list', '거점 목록 (L)', () => { this.sound.click(); this.setList(!this.listOpen); }, false, this.listOpen),
-      btn(this.sound.musicOn ? 'sound' : 'mute', this.sound.musicOn ? '배경음 끄기 (M)' : '배경음 켜기 (M)', () => this.setMusic(!this.sound.musicOn)),
+      btn(this.sound.musicOn ? 'sound' : 'mute', this.sound.musicOn ? `배경음 끄기 (M)\n지금 곡: ${this.sound.track.title}` : '배경음 켜기 (M)', () => this.setMusic(!this.sound.musicOn)),
       btn('gear', '설정과 저장', () => this.openModal('settings')),
     ]);
   }
@@ -392,8 +396,38 @@ export class UI {
       else if (sel.type === 'road') view = this.roadView(sel.road);
       else if (sel.type === 'project') view = this.projectView(sel.project);
     } else if (this.listOpen) view = this.overviewView();
-    this.el.insp.hidden = !view;
-    patch(this.el.insp, view || []);
+    const el = this.el.insp;
+    if (!view) {
+      if (!el.hidden && !this.inspClosing) {
+        this.inspClosing = true;
+        el.classList.add('out');
+        setTimeout(() => {
+          if (!this.inspClosing) return;
+          this.inspClosing = false;
+          el.classList.remove('out');
+          el.hidden = true;
+          patch(el, []);
+        }, 150);
+      }
+      return;
+    }
+    if (this.inspClosing) { this.inspClosing = false; el.classList.remove('out'); }
+    el.hidden = false;
+    patch(el, view);
+  }
+
+  // 매 프레임: 돈이 숫자를 따라 올라가고 내려간다
+  frame(dt) {
+    const m = this.game.money;
+    if (this.shownMoney === undefined) this.shownMoney = m;
+    this.shownMoney += (m - this.shownMoney) * (1 - Math.exp(-dt * 9));
+    if (Math.abs(m - this.shownMoney) < Math.abs(m) * 0.0004) this.shownMoney = m;
+    const text = fmtWon(this.shownMoney);
+    if (text !== this.moneyText) {
+      this.moneyText = text;
+      const el = this.el.top.querySelector('.money strong');
+      if (el) el.textContent = text;
+    }
   }
 
   head(leading, title, sub, onClose) {
@@ -594,7 +628,7 @@ export class UI {
           class: 'btn sell', disabled: !q.trucks.length, 'aria-label': '트럭 한 대 처분', 'data-tip': '트럭 한 대를 처분합니다 (구매가의 50% 환급).\n도로가 막힐 때 숨통을 틔웁니다.',
           onclick: () => { if (g.sellTruck(q)) { this.sound.click(); this.renderInspector(true); } },
         }, ico('minus')),
-        h('span', { class: 'count', 'data-tip': '이 노선의 트럭 수' }, `${q.trucks.length}대`),
+        h('span', { class: 'count', key: `c${q.trucks.length}`, 'data-tip': '이 노선의 트럭 수' }, `${q.trucks.length}대`),
         h('button', {
           class: 'btn buy', disabled: g.money < price,
           onclick: () => {
@@ -642,6 +676,7 @@ export class UI {
         rows.push(this.kv('들어오는 트럭', `${s.routesIn.reduce((sum, q) => sum + q.trucks.length, 0)}대`));
       }
       rows.push(this.kv('상하차장', `${s.bays}칸`));
+      if (s.lot && s.lot.cap) rows.push(this.kv('주차장', `${s.lot.used} / ${s.lot.cap}칸`));
       kids.push(h('div', { class: 'kvs', key: 'kvs' }, rows));
       if (node.waiting < 3) kids.push(this.baySec(s));
       if (s.inputs && !s.isCity && !s.inBuf.some((v) => v < g.inputCap(s) * 0.1)) kids.push(...this.factoryIncoming(s));
@@ -782,6 +817,8 @@ export class UI {
   openModal(name, data = null) {
     this.modalName = name;
     this.modalData = data;
+    clearTimeout(this.modalT);
+    this.el.modal.classList.remove('closing');
     this.el.modal.classList.add('show');
     this.sound.click();
     this.renderModal();
@@ -791,8 +828,13 @@ export class UI {
   }
   closeModal() {
     this.modalName = null;
-    this.el.modal.classList.remove('show');
-    patch(this.el.modal, []);
+    const m = this.el.modal;
+    m.classList.add('closing');
+    clearTimeout(this.modalT);
+    this.modalT = setTimeout(() => {
+      m.classList.remove('show', 'closing');
+      patch(m, []);
+    }, 150);
     this.confirmReset = false;
     this.saveText = '';
     this.renderTop();
@@ -871,7 +913,8 @@ export class UI {
         h('div', { class: 'sec', key: 'snd' }, h('h3', null, '소리'),
           h('label', { class: 'field' }, '효과음 크기', h('input', { id: 'set-vol', type: 'range', min: 0, max: 1, step: 0.05, value: snd.volume, oninput: (e) => { snd.setVolume(Number(e.target.value)); app.saveSettings(); snd.click(); } })),
           h('label', { class: 'field' }, '배경음 크기', h('input', { id: 'set-music', type: 'range', min: 0, max: 1, step: 0.05, value: snd.musicVolume, oninput: (e) => { snd.setMusicVolume(Number(e.target.value)); app.saveSettings(); } })),
-          h('label', { class: 'field' }, '배경음 켜기', h('input', { id: 'set-music-on', type: 'checkbox', checked: snd.musicOn, onchange: (e) => this.setMusic(e.target.checked) }))),
+          h('label', { class: 'field' }, '배경음 켜기', h('input', { id: 'set-music-on', type: 'checkbox', checked: snd.musicOn, onchange: (e) => this.setMusic(e.target.checked) })),
+          h('div', { class: 'field' }, h('span', { class: 'now-playing' }, snd.track.title, h('small', null, snd.track.artist)), h('button', { class: 'btn', onclick: () => { snd.unlock(); snd.nextTrack(); this.renderModal(); } }, '다음 곡'))),
         h('div', { class: 'sec', key: 'map' }, h('h3', null, '지도'),
           h('div', { class: 'btn-row' },
             h('button', { class: `btn${this.r.palName === 'day' ? ' go' : ''}`, onclick: () => { this.r.setPalette('day'); app.saveSettings(); app.drawMiniBase(); this.renderModal(); } }, '낮'),
@@ -887,7 +930,7 @@ export class UI {
         h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
           h('p', { class: 'credit' }, '지도 끌기: 이동 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · M: 배경음 · Esc: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
-          h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다. 화면 디자인은 Dinosaur Polo Club의 Mini Metro를 참고했습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth. 그림은 모두 코드로 그린 벡터입니다.', h('br'), '배경음: Holizna, We Drove All Night (CC0, OpenGameArt). 효과음은 코드로 합성했습니다.', h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
+          h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다. 화면 디자인은 Dinosaur Polo Club의 Mini Metro를 참고했습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth. 그림은 모두 코드로 그린 벡터입니다.', h('br'), `배경음: ${MUSIC_TRACKS.map((q) => `${q.artist}, ${q.title}`).join(' · ')} (모두 CC0, OpenGameArt). 효과음은 코드로 합성했습니다.`, h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
   }
 
   welcomeDialog() {
@@ -969,7 +1012,7 @@ export class UI {
     this._steps = [
       { title: '첫 트럭을 사 보세요', text: '지도에서 고리가 퍼지는 충주 사과밭을 누르세요.', target: () => apple, done: () => (this.sel && this.sel.site === apple) || apple.routesOut.some((q) => q.trucks.length) },
       { title: '사과를 공장으로', text: '오른쪽 카드에서 파란 트럭 버튼을 누르세요. 노선이 지도에 선으로 나타납니다.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length > 0 },
-      { title: '납품 대금이 들어옵니다', text: '꽉 찬 사각형이 짐을 실은 트럭, 속이 빈 사각형이 빈 트럭입니다. 돈이 모이면 트럭을 더 사세요. 거점 옆의 작은 네모가 쌓인 화물입니다.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length >= 3 },
+      { title: '납품 대금이 들어옵니다', text: '적재함에 색이 차 있으면 짐을 실은 트럭, 회색이면 빈 트럭입니다. 돈이 모이면 트럭을 더 사세요. 거점 옆의 작은 네모가 쌓인 화물입니다.', target: () => null, done: () => firstRoute() && firstRoute().trucks.length >= 3 },
       { title: '이제 가공식품', text: '공장에 사과가 들어가면 가공식품이 쌓입니다. 음성 식품공장을 눌러 청주로 가는 트럭을 사세요. 값이 더 비쌉니다.', target: () => food, done: () => foodRoutes().some((q) => q.trucks.length > 0) },
       { title: '납품하면 지역이 자랍니다', text: '위쪽 막대가 납품 실적입니다. 실적이 쌓이면 새 거점이 열리고, 다 채우면 다음 권역이 개통됩니다.', target: () => null, done: () => g.progress() >= 0.2 },
       { title: '길이 막히기 시작하면', text: '어두운 고리가 생긴 교차로를 누르세요. 진입 방향에 양보 표지를 칠하면 나머지 방향이 멈추지 않고 지나갑니다. 연구에서 신호등도 배울 수 있습니다.', target: () => null, done: () => g.techs.has('signal') || g.progress() >= 0.6 || g.stage > 0 },

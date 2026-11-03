@@ -1,14 +1,20 @@
 // 차선 기반 교통 시뮬레이션. 정체는 교차로 충돌과 차간거리에서 저절로 생긴다.
 import { V0, SHIP_SPEED, laneOffset } from './network.js';
 
-export const ACC = 7;      // km/s²
-export const BRK = 9;
+export const BRK = 9;      // 부딪히기 직전에 밟는 가장 센 브레이크 km/s²
 export const GAP = 0.32;   // 앞차와의 최소 간격 km
+const HEADWAY = 0.1;       // 달릴 때 앞차와 두는 시간 간격 s
+const TAU = 0.22;          // 목표 속도를 쫓아가는 빠르기 s
+const JERK_ON = 8;         // 가속 페달을 밟는 빠르기 km/s³
+const JERK_BRAKE = 14;     // 브레이크를 밟는 빠르기
+const JERK_OFF = 12;       // 페달에서 발을 떼는 빠르기
+const SOFT_V = 0.9;        // 이 속도 아래에서는 브레이크를 풀어 가며 멈춘다 km/s
+const START_GAP = 0.06;    // 멈춰 있던 차는 앞이 이만큼 벌어져야 출발한다 km
 const STOP_MARGIN = 0.04;
 const GRANT_MARGIN = 0.7;
-const SIGNAL_GREEN = 4.6;
+const SIGNAL_GREEN = 5.4;
 const SIGNAL_CLEAR = 0.45;
-const SMART_MAX = 8;
+const SMART_MAX = 9;
 const V_AUTO = 0.4;        // 비보호 교차로 통과 속도 비율
 const V_TURN = 0.5;
 const V_STRAIGHT = 0.92;
@@ -42,6 +48,7 @@ export class Vehicle {
     this.ringNode = null;
     this.ringList = null;
     this.mergeLead = null;
+    this.a = 0;          // 지금 가속도 km/s² (브레이크를 밟으면 음수)
     this.odo = 0;
     this.state = 'idle'; // idle | road | bay | queue | ship
     this.cargo = 0;
@@ -57,6 +64,8 @@ export class Vehicle {
     this.dV = 0;
     this.dT = 0;
   }
+  // 평소 브레이크. 짐을 실으면 조금 밀린다
+  get brake() { return this.model.brk * (1 - 0.12 * Math.min(1, this.cargo / this.model.cap)); }
   passed(seg) {
     const t = this.trail;
     t[2] = t[1];
@@ -142,6 +151,7 @@ export class Traffic {
     v.conn = null;
     v.s = 0;
     v.v = 0;
+    v.a = 0;
     v.granted = false;
     v.state = 'road';
     v.seg.seg = 0;
@@ -172,7 +182,7 @@ export class Traffic {
     if (behind && s - v.len - GAP < behind.s) return false;
     lane.veh.splice(pos, 0, v);
     v.clearTrail();
-    v.lane = lane; v.conn = null; v.s = s; v.v = edge.speed * v.speedF * 0.8; v.pi = edgeIndex; v.state = 'road'; v.granted = false;
+    v.lane = lane; v.conn = null; v.s = s; v.v = edge.speed * v.speedF * 0.8; v.a = 0; v.pi = edgeIndex; v.state = 'road'; v.granted = false;
     this.activate(lane);
     return true;
   }
@@ -215,10 +225,12 @@ export class Traffic {
     if (!f || f.granted) return;
     const e = lane.edge;
     const dStop = e.L - f.s;
-    const reqD = (f.v * f.v) / (2 * BRK) + GRANT_MARGIN;
+    // 브레이크를 밟기 시작할 거리보다 조금 먼저 묻는다. 허가가 나면 속도를 줄이지 않고 지나간다
+    const brk = f.brake;
+    const reqD = (f.v * f.v + SOFT_V * SOFT_V) / (2 * brk) + f.v * TAU + GRANT_MARGIN;
     if (dStop > reqD) return;
     if (f.pi >= f.path.length - 1) {
-      if (dStop < 0.25 && this.hooks.arrive(f)) this.removeFromLane(f);
+      if (dStop < 0.25 && this.hooks.arrive(f)) this.removeFromLane(f, true);
       return;
     }
     const next = f.path[f.pi + 1];
@@ -295,7 +307,7 @@ export class Traffic {
       let anySpace = false, bestFree = -Infinity;
       for (let k = hi; k >= lo; k--) {
         const tl = next.lanes[k];
-        const fr = tl.free();
+        const fr = tl.freeSoon();
         if (fr < need && (tl.veh.length || tl.pending > 0)) continue;
         anySpace = true;
         if (this.hasConflict(node, f, turn, tl, control)) { conflicted = true; continue; }
@@ -413,7 +425,7 @@ export class Traffic {
     let tl = null, bf = -Infinity;
     for (let k = hi; k >= lo; k--) {
       const q = next.lanes[k];
-      const fr = q.free();
+      const fr = q.freeSoon();
       if (fr < need && (q.veh.length || q.pending > 0)) continue;
       if (fr > bf) { bf = fr; tl = q; }
     }
@@ -480,6 +492,50 @@ export class Traffic {
   }
 
   // ── 이동 ──────────────────────────────────────────────
+  // 트럭 한 대의 가감속. 엔진 힘은 빠를수록 떨어지고 짐을 실으면 둔해진다.
+  // 앞차나 정지선은 미리 보고 브레이크를 서서히 밟아, 멈추기 직전에는 풀어 가며 선다.
+  // 페달은 한 번에 끝까지 못 밟는다. 그래도 부딪힐 것 같으면 BRK까지 세게 밟는다.
+  // head: 앞차와 둘 시간 간격, slowV·slowD: 앞으로 slowD km 안에 slowV까지 줄여야 하는 곳
+  drive(c, vLim, gap, leadV, head, dt, slowV, slowD) {
+    const m = c.model;
+    const brk = c.brake;
+    const v = c.v;
+    let want;
+    if (v <= vLim) {
+      const r = v / vLim;
+      want = m.acc * (1 - 0.3 * Math.min(1, c.cargo / m.cap)) * (1 - r * r);
+    } else {
+      want = -Math.min(brk, (v - vLim) / TAU);
+    }
+    let vt = Infinity;
+    if (gap !== Infinity) {
+      const g = gap - v * head - Math.max(0, v - leadV) * TAU;
+      const softD = (SOFT_V * SOFT_V) / brk;
+      const p2 = g <= 0 ? 0 : g < softD ? ((brk / SOFT_V) * g) ** 2 : 2 * brk * g - SOFT_V * SOFT_V;
+      vt = Math.sqrt(leadV * leadV + p2);
+      if (v < 0.02 && gap < START_GAP) vt = 0;
+    }
+    if (slowD !== undefined) {
+      const q = Math.sqrt(slowV * slowV + 2 * brk * Math.max(slowD - v * TAU, 0));
+      if (q < vt) vt = q;
+    }
+    if (vt !== Infinity) {
+      const w = (vt - v) / TAU;
+      if (w < want) want = w;
+    }
+    const da = want - c.a;
+    if (da > 0) c.a += Math.min(da, (c.a < 0 ? JERK_OFF : JERK_ON) * dt);
+    else c.a += Math.max(da, -(c.a > 0 ? JERK_OFF : JERK_BRAKE) * dt);
+    let vNew = v + c.a * dt;
+    if (vNew <= 0) { vNew = 0; if (c.a < 0) c.a = 0; }
+    if (gap !== Infinity) {
+      const safe = Math.sqrt(Math.max(0, leadV * leadV + 2 * BRK * Math.max(gap, 0)));
+      if (safe < vNew) { vNew = safe; c.a = Math.max(-BRK, (vNew - v) / dt); }
+    }
+    c.v = vNew;
+    return vNew;
+  }
+
   stepConn(conn, dt) {
     const vs = conn.veh;
     const tl = conn.toLane;
@@ -504,17 +560,12 @@ export class Traffic {
         if (ml.targetLane === tl) {
           const dLead = ml.conn ? ml.conn.len - ml.s : (ml.lane ? ml.lane.edge.L - ml.s + ml.nextConn.len : 0);
           const g3 = conn.len - c.s - dLead - ml.len - GAP;
-          if (g3 < gap) { gap = g3; leadV = ml.v; }
+          // 먼저 허가받은 차가 이미 한참 뒤에 있으면 기다리지 않는다
+          if (g3 < -2 * (ml.len + GAP)) c.mergeLead = null;
+          else if (g3 < gap) { gap = g3; leadV = ml.v; }
         } else c.mergeLead = null;
       }
-      let vNew = c.v + ACC * dt;
-      if (vNew > c.connV) vNew = Math.max(c.connV, c.v - BRK * dt);
-      if (gap !== Infinity) {
-        const safe = Math.sqrt(Math.max(0, leadV * leadV + 2 * BRK * Math.max(gap, 0)));
-        if (safe < vNew) vNew = safe;
-      }
-      c.v = vNew;
-      const ds = vNew * dt;
+      const ds = this.drive(c, c.connV, gap, leadV, HEADWAY, dt) * dt;
       c.s += ds;
       c.odo += ds;
       if (c.ringList && c.s > conn.ringS1 + c.len * 0.5) this.leaveRing(c);
@@ -548,8 +599,8 @@ export class Traffic {
     const roadV = e.speed;
     for (let i = 0; i < vs.length; i++) {
       const c = vs[i];
-      let gap, leadV;
-      let vLim = roadV * c.speedF;
+      let gap, leadV, slowV, slowD;
+      let head = HEADWAY;
       if (i > 0) {
         const f = vs[i - 1];
         gap = f.s - f.len - c.s - GAP;
@@ -570,14 +621,16 @@ export class Traffic {
             if (ml.targetLane === c.targetLane) {
               const dLead = ml.conn ? ml.conn.len - ml.s : (ml.lane ? ml.lane.edge.L - ml.s + ml.nextConn.len : 0);
               const g3 = dStop + conn.len - dLead - ml.len - GAP;
-              if (g3 < gap) { gap = g3; leadV = ml.v; }
+              if (g3 < -2 * (ml.len + GAP)) c.mergeLead = null;
+              else if (g3 < gap) { gap = g3; leadV = ml.v; }
             } else c.mergeLead = null;
           }
-          const lim = Math.sqrt(c.connV * c.connV + 2 * BRK * Math.max(dStop, 0));
-          if (lim < vLim) vLim = lim;
+          slowV = c.connV;
+          slowD = dStop;
         } else {
           gap = dStop - STOP_MARGIN;
           leadV = 0;
+          head = 0;
         }
         const le = lane.lastExit;
         if (le) {
@@ -589,14 +642,7 @@ export class Traffic {
           }
         }
       }
-      let vNew = c.v + ACC * dt;
-      if (vNew > vLim) vNew = Math.max(vLim, c.v - BRK * dt);
-      if (gap !== Infinity) {
-        const safe = Math.sqrt(Math.max(0, leadV * leadV + 2 * BRK * Math.max(gap, 0)));
-        if (safe < vNew) vNew = safe;
-      }
-      c.v = vNew;
-      const ds = vNew * dt;
+      const ds = this.drive(c, roadV * c.speedF, gap, leadV, head, dt, slowV, slowD) * dt;
       c.s += ds;
       c.odo += ds;
       if (c.res && c.resLane === lane && (c.s >= c.len || c.s >= L - 0.1)) this.releaseRes(c);
@@ -610,7 +656,7 @@ export class Traffic {
     while (vs.length) {
       const f = vs[0];
       if (f.s < L) break;
-      if (!f.granted) { f.s = L - 0.001; f.v = 0; break; }
+      if (!f.granted) { f.s = L - 0.001; f.v = 0; f.a = 0; break; }
       vs.shift();
       const conn = f.nextConn;
       f.s -= L;
@@ -624,13 +670,16 @@ export class Traffic {
     }
   }
 
-  removeFromLane(f) {
+  removeFromLane(f, keepSpeed) {
     const lane = f.lane;
     if (!lane) return;
     const i = lane.veh.indexOf(f);
     if (i >= 0) lane.veh.splice(i, 1);
     f.lane = null;
-    f.v = 0;
+    if (!keepSpeed) {
+      f.v = 0;
+      f.a = 0;
+    }
     if (f.res) this.releaseRes(f);
   }
 
@@ -659,6 +708,7 @@ export class Traffic {
     f.mergeLead = null;
     f.state = 'idle';
     f.v = 0;
+    f.a = 0;
   }
 
   // ── 뱃길 ──────────────────────────────────────────────
@@ -883,9 +933,13 @@ export class Traffic {
 
   // 앞머리에서 back만큼 뒤의 도로 위 위치. 막 지나온 구간까지 거슬러 찾는다 (렌더링용)
   poseBehind(v, back, out, hint) {
-    let seg = v.lane || v.conn;
+    const seg = v.lane || v.conn;
     if (!seg) return null;
-    let s = v.s - back;
+    return this.poseOn(v, seg, v.s - back, out, hint);
+  }
+
+  // 구간 seg 위 거리 s의 위치. s가 음수면 지나온 구간으로 거슬러 간다
+  poseOn(v, seg, s, out, hint) {
     for (let i = 0; s < 0 && i < 3; i++) {
       const q = v.trail[i];
       if (!q) { s = 0; break; }

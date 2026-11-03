@@ -17,6 +17,8 @@
   --halo: rgba(246, 241, 227, 0.92);
   --dim: rgba(246, 241, 227, 0.74);
   --text-halo: 0 0 2px var(--paper), 1px 1px 2px var(--paper), -1px -1px 2px var(--paper), 1px -1px 2px var(--paper), -1px 1px 2px var(--paper), 0 0 7px var(--paper);
+  --ease: cubic-bezier(.2, .75, .25, 1);
+  --pop: cubic-bezier(.3, 1.5, .55, 1);
   --font: "Helvetica Neue", Helvetica, Arial, "Gothic A1", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
 }
 :root[data-theme="night"] {
@@ -116,7 +118,7 @@ svg { display: block; width: 100%; height: 100%; }
 #menu .dot { position: absolute; top: -2px; right: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); }
 
 #toolhint { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 5px 11px; border-radius: 2px; font-weight: 600; font-size: 13px; display: none; white-space: nowrap; max-width: calc(100vw - 16px); overflow: hidden; text-overflow: ellipsis; }
-#toolhint.show { display: block; }
+#toolhint.show { display: block; animation: risein .18s var(--ease); }
 #toolhint b { font-weight: 800; }
 
 /* ── 정보 카드 ───────────────────────── */
@@ -232,13 +234,16 @@ svg { display: block; width: 100%; height: 100%; }
 #zoomctl button:hover { background: rgba(120, 110, 90, .16); }
 #zoomctl svg { width: 14px; height: 14px; }
 #osm { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 14px; font-size: 10px; color: var(--muted); text-decoration: none; text-shadow: var(--text-halo); }
-#tooltip { position: fixed; z-index: 30; max-width: 280px; background: var(--ink); color: var(--paper); padding: 5px 9px; border-radius: 2px; font-size: 12.5px; line-height: 1.45; pointer-events: none; white-space: pre-line; }
+#tooltip { position: fixed; z-index: 30; left: 0; top: 0; max-width: 280px; background: var(--ink); color: var(--paper); padding: 5px 9px; border-radius: 2px; font-size: 12.5px; line-height: 1.45; pointer-events: none; white-space: pre-line; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity .12s ease, transform .16s var(--ease), visibility 0s linear .12s; }
+#tooltip.show { opacity: 1; visibility: visible; transform: none; transition: opacity .14s ease .07s, transform .18s var(--ease) .07s, visibility 0s; }
 
 #toasts { position: absolute; top: calc(max(12px, env(safe-area-inset-top, 0px)) + 66px); left: max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 4px; pointer-events: none; width: 280px; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; animation: toastin .28s ease-out; cursor: pointer; text-align: left; line-height: 1.3; text-shadow: var(--text-halo); }
 .toast .ico { width: 20px; height: 20px; }
 .toast small { display: block; color: var(--muted); font-weight: 500; font-size: 11.5px; }
-.toast.out { opacity: 0; transform: translateX(-10px); transition: all .3s; }
+.toast { transition: opacity .3s ease, transform .3s var(--ease); }
+.toast:hover { transform: translateX(3px); }
+.toast.out { opacity: 0; transform: translateX(-10px); }
 @keyframes toastin { from { opacity: 0; transform: translateX(-14px); } }
 
 /* ── 튜토리얼 ───────────────────────── */
@@ -261,7 +266,9 @@ svg { display: block; width: 100%; height: 100%; }
 
 /* ── 창 ─────────────────────────────── */
 #modal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: var(--dim); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 12px; z-index: 20; }
-#modal.show { display: flex; }
+#modal.show { display: flex; animation: fadein .18s ease; }
+#modal.closing { animation: fadeout .15s ease forwards; pointer-events: none; }
+#modal.closing > * { animation: dialogout .15s ease forwards; }
 .dialog { background: var(--card); border-radius: 3px; box-shadow: 0 2px 4px rgba(60, 50, 30, .1), 0 16px 48px rgba(60, 50, 30, .16); width: min(620px, 100%); max-height: min(760px, 100%); display: flex; flex-direction: column; overflow: hidden; }
 .dialog.small { width: min(460px, 100%); }
 .d-head { display: flex; align-items: center; gap: 12px; padding: 16px 12px 8px 20px; flex: none; }
@@ -282,6 +289,8 @@ svg { display: block; width: 100%; height: 100%; }
 .foot { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 500; font-size: 13.5px; min-height: 30px; }
 .field.small { min-height: 0; font-size: 12px; color: var(--muted); }
+.now-playing { font-weight: 600; min-width: 0; line-height: 1.25; }
+.now-playing small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
 .field input[type=range] { width: 170px; accent-color: var(--ink); }
 .field input[type=checkbox] { accent-color: var(--ink); }
 .savebox { width: 100%; height: 66px; font: 11px/1.3 ui-monospace, monospace; background: transparent; color: var(--ink); border: 1.5px solid var(--line); border-radius: 2px; padding: 6px; resize: none; }
@@ -298,6 +307,93 @@ svg { display: block; width: 100%; height: 100%; }
 .cta span:last-child { background: var(--accent); color: #fff; padding: 3px 10px 4px; }
 .cta:hover span:last-child { background: var(--accent-deep); }
 
+/* ── 움직임 ─────────────────────────── */
+/* 눌리는 것은 모두 부드럽게 반응한다 */
+button { transition: background-color .16s ease, color .16s ease, box-shadow .18s ease, transform .18s var(--ease), opacity .16s ease; }
+button:active:not(:disabled) { transform: scale(.94); }
+.tool { transition: transform .2s var(--pop), box-shadow .2s var(--ease), background-color .2s ease, width .2s var(--ease), filter .16s ease; }
+.tool:hover { transform: translateY(-3px) scale(1.1); filter: brightness(1.06); }
+.tool:active:not(:disabled) { transform: scale(.9); }
+.tool.on:hover { transform: translateY(-2px) scale(1.04); }
+.tool.locked:hover { transform: scale(1.25); filter: none; }
+.tool.locked::before { transition: background-color .16s ease; }
+.tool.locked:hover::before { background: var(--muted); }
+.tool .ico { transition: transform .2s var(--pop); }
+.tool.on .ico { transform: scale(1.08); }
+#menu button { transition: background-color .16s ease, color .16s ease, transform .2s var(--pop); }
+#menu button:hover { transform: translateY(-2px) scale(1.1); }
+#menu button:active { transform: scale(.9); }
+#menu .dot { animation: dotin .3s var(--pop); }
+.speed button { transition: background-color .18s ease, color .16s ease, transform .2s var(--pop); }
+.speed button:hover { transform: scale(1.12); }
+.speed button.on { transform: scale(1.04); }
+.speed button:active { transform: scale(.9); }
+#zoomctl button { transition: background-color .16s ease, transform .2s var(--pop); }
+#zoomctl button:hover { transform: scale(1.15); }
+#zoomctl button:active { transform: scale(.9); }
+.money { transition: transform .2s var(--ease); transform-origin: left top; }
+.money:hover { transform: scale(1.03); }
+.money:active:not(:disabled) { transform: scale(.98); }
+.money small, .money em { transition: color .2s ease; }
+#goal { transition: transform .2s var(--ease); }
+#goal:hover { transform: translateX(-50%) scale(1.04); }
+#goal .fill, .meter .fill { transition: width .35s var(--ease), background-color .25s ease; }
+.todo { animation: todoin .28s var(--ease); transition: transform .2s var(--ease); }
+.todo:hover { transform: translateX(-4px); }
+.todo i { transition: transform .2s var(--pop); }
+.todo:hover i { transform: scale(1.4); }
+.btn { transition: background-color .16s ease, color .16s ease, box-shadow .16s ease, transform .18s var(--ease), opacity .16s ease; }
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(.97); }
+.route { transition: border-left-width .16s var(--ease), padding-left .16s var(--ease), background-color .16s ease; }
+.route:hover { border-left-width: 6px; padding-left: 7px; background: rgba(120, 110, 90, .07); }
+.route-act .count { animation: bump .28s var(--pop); }
+.list-row { transition: padding-left .16s var(--ease), background-color .16s ease; border-radius: 2px; }
+.list-row:hover { padding-left: 5px; background: rgba(120, 110, 90, .09); }
+.list-row:hover .t { text-decoration: none; }
+.list-row .ico { transition: transform .2s var(--pop); }
+.list-row:hover .ico { transform: scale(1.15); }
+.ctl { transition: background-color .16s ease; }
+.ctl .disc { transition: transform .2s var(--pop), box-shadow .2s var(--ease); }
+.ctl:hover:not(:disabled) .disc { transform: scale(1.12); }
+.row { transition: background-color .16s ease; }
+.row:hover { background: rgba(120, 110, 90, .05); }
+.row .disc { transition: transform .2s var(--pop); }
+.row:hover .disc { transform: scale(1.1); }
+.seg button { transition: background-color .16s ease, color .16s ease, transform .16s var(--ease); }
+.p-x { transition: background-color .16s ease, color .16s ease, transform .2s var(--pop); }
+.p-x:hover { transform: rotate(90deg); }
+.more-btn .ico { transition: transform .22s var(--ease); }
+.more-btn { transition: color .16s ease; }
+.cta { transition: transform .2s var(--ease); }
+.cta:hover { transform: translateX(6px); }
+.cta .arrow { transition: transform .2s var(--ease); }
+.cta:hover .arrow { transform: translateX(3px); }
+.cta span:last-child { transition: background-color .16s ease; }
+#osm { transition: color .16s ease; }
+#osm:hover { color: var(--ink); }
+
+/* 나타나고 사라지는 것 */
+#inspector { animation: cardin .24s var(--ease); }
+#inspector.out { animation: cardout .15s ease forwards; pointer-events: none; }
+.p-body { animation: bodyin .22s var(--ease); }
+.stats { animation: popin .18s var(--ease); transform-origin: left top; }
+.dialog, .welcome { animation: dialogin .26s var(--ease); }
+#mini { animation: fadein .25s ease; }
+.coach-card { animation: risein .28s var(--ease); }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes fadeout { to { opacity: 0; } }
+@keyframes cardin { from { opacity: 0; transform: translateX(14px); } }
+@keyframes cardout { to { opacity: 0; transform: translateX(10px); } }
+@keyframes bodyin { from { opacity: 0; transform: translateY(5px); } }
+@keyframes popin { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+@keyframes dialogin { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+@keyframes dialogout { to { opacity: 0; transform: translateY(6px) scale(.99); } }
+@keyframes risein { from { opacity: 0; transform: translateY(8px); } }
+@keyframes todoin { from { opacity: 0; transform: translateX(10px); } }
+@keyframes dotin { from { transform: scale(0); } }
+@keyframes bump { 40% { transform: scale(1.3); } }
+
 /* ── 좁은 화면 ───────────────────────── */
 @media (max-width: 1000px) {
   #goal .track { width: 110px; }
@@ -312,6 +408,9 @@ svg { display: block; width: 100%; height: 100%; }
   .stats { top: 62px; }
   .speed button { width: 28px; height: 28px; }
   #goal { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 34px); left: auto; right: 12px; transform: none; font-size: 12px; gap: 6px; }
+  #goal:hover { transform: none; }
+  #inspector { animation-name: sheetin; }
+  #inspector.out { animation-name: sheetout; }
   #goal .track { width: 80px; }
   #todo { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 56px); right: 12px; }
   .todo:nth-child(n + 2) { display: none; }
@@ -337,6 +436,14 @@ svg { display: block; width: 100%; height: 100%; }
   .row-act { flex-direction: column; }
 }
 
+@keyframes sheetin { from { opacity: 0; transform: translateY(16px); } }
+@keyframes sheetout { to { opacity: 0; transform: translateY(12px); } }
+
+/* 움직임 줄이기 설정에서도 마우스 반응은 살려 두고, 크게 움직이는 것만 페이드로 바꾼다 */
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .01ms !important; transition: none !important; }
+  #banner.show { animation-name: bannerfade; }
+  .dialog, .welcome, #inspector, .p-body, .stats, .coach-card, .todo, #toolhint.show { animation-name: fadein; }
+  #inspector.out { animation-name: fadeout; }
+  #modal.closing > * { animation-name: fadeout; }
 }
+@keyframes bannerfade { 0%, 100% { opacity: 0; } 10%, 82% { opacity: 1; } }

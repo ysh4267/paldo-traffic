@@ -431,6 +431,7 @@ class App {
     this.settleAway();
     this.handleEvents();
     this.renderer.frame(dt);
+    this.ui.frame(dt);
     this.slowUpdates(dt);
     if (this.isAway) this.setAway(false);
   }

@@ -5,10 +5,15 @@ import {
   GOODS, TIER_WEIGHT, BASE_RATE, EXPAND_COST, BAY_COST, START_MONEY, TRUCK_STEP, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE,
   LANE_PRICE_PER_KM, LANE_PRICE_MIN, LAND_FACTOR, PROJECT_COST, FERRY_PRICE, TOW_PRICE, CITY_ACCEPTS, PORT_ACCEPTS, AIR_ACCEPTS, DOKDO_ACCEPTS, fmtWon,
 } from './defs.js';
+import { Lot, EXIT_PREFIX } from './lot.js';
 
 export const SAVE_VERSION = 2;
 const ECON_DT = 0.05;
 const CITY_STAGE_NEED = [0, 25, 110, 480, 2000, 9000];
+const LOT_V = 3;         // 주차장 안에서 달리는 속도 km/s
+const LOT_V_BACK = 1.6;  // 후진 속도
+const LOT_LEAVE_V = 1.5; // 진입로로 나갈 때의 속도
+const LOT_SHIFT = 0.25;  // 후진과 전진을 바꾸며 잠깐 서는 시간 s
 
 export class Site {
   constructor(def, index, net) {
@@ -33,6 +38,9 @@ export class Site {
     this.inBuf = this.inputs ? this.inputs.map(() => 0) : null;
     this.loadBays = [];
     this.unloadBays = [];
+    this.unloadQ = [];   // 칸에 대고 하차 차례를 기다리는 트럭
+    this.inbound = 0;    // 하차하러 들어오는 중이거나 기다리는 트럭 수
+    this.lot = null;
     this.yard = [];
     this.exitQ = [];
     this.routesOut = [];
@@ -104,6 +112,9 @@ export class Game {
     this.stage = 0;
     this.routes = new Map();
     this.routeVer = 0;
+    this.lotVer = 0;           // 주차장이 새로 생기거나 넓어지면 오른다
+    this.lotVehicles = new Set();
+    this.lotMovers = [];
     this.techs = new Set();
     this.upg = {};
     for (const u of UPGRADES) this.upg[u.id] = 0;
@@ -293,6 +304,13 @@ export class Game {
           this.finishUnload(s, b.v);
         }
       }
+      // 칸에 댄 트럭 → 하차 시작
+      while (s.unloadQ.length && s.unloadBays.length < s.bays) {
+        const v = s.unloadQ.shift();
+        s.inbound--;
+        v.state = 'bay';
+        s.unloadBays.push({ v, t: 0, T: v.model.load * bayF });
+      }
       // 대기장 → 상차장
       if (s.yard.length) {
         for (const v of s.yard) v.yardT = (v.yardT || 0) + dt;
@@ -311,8 +329,22 @@ export class Game {
         const v = s.exitQ[0];
         if (v.retire) { s.exitQ.shift(); this.removeTruck(v); continue; }
         const first = v.path[0];
-        if (!this.traffic.inject(v, first, 0)) break;
+        const L = v.lot;
+        const dOdo = v.dOdo, dV = v.dV, speed = v.v;
+        if (!this.traffic.inject(v, first, 0)) {
+          v.v = 0;
+          v.a = 0;
+          break;
+        }
         s.exitQ.shift();
+        // 주차장에서 나온 트럭은 멈추지 않고 그대로 이어 달린다
+        if (L) {
+          v.passed(L.seg);
+          v.dOdo = dOdo;
+          v.dV = dV;
+          v.v = speed;
+          this.dropLot(v);
+        }
       }
     }
   }
@@ -335,9 +367,8 @@ export class Game {
     v.leg = 1;
     v.path = this.pathFor(r, 1);
     v.tripStart = this.time;
-    v.expected = (r.freeTime / v.model.speed / (1 + this.upg.speed * 0.05)) * 1.45 + 5;
-    v.state = 'queue';
-    s.exitQ.push(v);
+    v.expected = (r.freeTime / v.model.speed / (1 + this.upg.speed * 0.05)) * 1.6 + 11;
+    this.leaveLot(s, v);
   }
 
   finishUnload(s, v) {
@@ -347,8 +378,7 @@ export class Game {
     v.cargo = 0;
     v.goods = null;
     v.path = this.pathFor(r, 0);
-    v.state = 'queue';
-    s.exitQ.push(v);
+    this.leaveLot(s, v);
   }
 
   pathFor(route, leg) {
@@ -382,19 +412,129 @@ export class Game {
   onArrive(v) {
     const r = v.route;
     if (v.retire) { this.removeTruckFromSim(v); return true; }
-    const bayF = 1 - this.upg.bay * 0.08;
     if (v.leg === 1) {
       const s = r.to;
-      if (s.unloadBays.length >= s.bays) return false;
-      v.state = 'bay';
-      s.unloadBays.push({ v, t: 0, T: v.model.load * bayF });
+      if (s.inbound >= s.bays * 3) return false;
+      s.inbound++;
+      this.enterLot(s, v);
       return true;
     }
-    const s = r.from;
+    this.enterLot(r.from, v);
+    return true;
+  }
+
+  // ── 주차장 ────────────────────────────────────────────
+  lotOf(s) {
+    if (!s.lot) { s.lot = new Lot(s, this); this.lotVer++; }
+    return s.lot;
+  }
+  takeStall(s, v) {
+    const lot = this.lotOf(s);
+    const cap = lot.cap;
+    const stall = lot.take(v);
+    if (lot.cap !== cap) this.lotVer++;
+    return stall;
+  }
+  // 차로 끝에 닿은 트럭이 칸을 찾아 들어간다. 칸이 없으면 보이지 않는 곳에서 기다린다
+  enterLot(s, v) {
+    const stall = this.takeStall(s, v);
+    if (stall < 0) { v.v = 0; v.a = 0; this.lotParked(s, v); return; }
+    const lane = v.lane;
+    const seg = s.lot.pathIn(stall, lane ? lane.index : 0);
+    if (lane) v.passed(lane);
+    v.state = 'lot';
+    v.lot = { site: s, stall, phase: 'in', seg, s: lane ? v.s - lane.edge.L : 0, hold: 0 };
+    this.lotVehicles.add(v);
+    this.lotMovers.push(v);
+  }
+  // 새 트럭이나 구난된 트럭은 빈 칸에 바로 세운다
+  parkNow(s, v) {
+    const stall = this.takeStall(s, v);
+    if (stall >= 0) {
+      const seg = s.lot.pathIn(stall, 0);
+      v.lot = { site: s, stall, phase: 'park', seg, s: seg.len, hold: 0 };
+      this.lotVehicles.add(v);
+    }
     v.state = 'queue';
     v.yardT = 0;
     s.yard.push(v);
-    return true;
+  }
+  // 칸에 멈춘 뒤: 실을 트럭은 대기장 줄에, 내릴 트럭은 하차 줄에 선다
+  lotParked(s, v) {
+    if (v.leg === 1) {
+      v.state = 'queue';
+      s.unloadQ.push(v);
+    } else {
+      v.state = 'queue';
+      v.yardT = 0;
+      s.yard.push(v);
+    }
+  }
+  // 일을 마치면 후진으로 빠져나온다
+  leaveLot(s, v) {
+    const L = v.lot;
+    if (!L) {
+      v.state = 'queue';
+      s.exitQ.push(v);
+      return;
+    }
+    v.state = 'lot';
+    L.phase = 'back';
+    L.seg = s.lot.pathBack(L.stall);
+    L.s = v.len;
+    v.v = 0;
+    v.a = 0;
+    L.hold = LOT_SHIFT;
+    this.lotMovers.push(v);
+  }
+  dropLot(v) {
+    const L = v.lot;
+    if (!L) return;
+    if (L.stall >= 0) L.site.lot.release(L.stall);
+    v.lot = null;
+    this.lotVehicles.delete(v);
+  }
+  stepLot(dt) {
+    const list = this.lotMovers;
+    let keep = 0;
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      const L = v.lot;
+      if (!L || L.phase === 'park' || L.phase === 'exit') continue;
+      if (L.hold > 0) { L.hold -= dt; list[keep++] = v; continue; }
+      const remain = L.seg.len - L.s;
+      const vEnd = L.phase === 'out' ? LOT_LEAVE_V : 0;
+      const u = this.traffic.drive(v, L.phase === 'back' ? LOT_V_BACK : LOT_V, remain, vEnd, 0, dt);
+      const ds = u * dt;
+      L.s += ds;
+      v.odo += ds;
+      if (remain - ds > 0.02 && (u > 0.02 || remain > 0.08)) { list[keep++] = v; continue; }
+      // 구간 끝
+      L.s = L.seg.len;
+      const s = L.site;
+      if (L.phase === 'in') {
+        L.phase = 'park';
+        v.v = 0;
+        v.a = 0;
+        this.lotParked(s, v);
+      } else if (L.phase === 'back') {
+        const stall = L.stall;
+        s.lot.release(stall);
+        L.stall = -1;
+        L.phase = 'out';
+        L.seg = s.lot.pathOut(stall);
+        L.s = EXIT_PREFIX + v.len;
+        v.v = 0;
+        v.a = 0;
+        L.hold = LOT_SHIFT;
+        list[keep++] = v;
+      } else {
+        L.phase = 'exit';
+        v.state = 'queue';
+        s.exitQ.push(v);
+      }
+    }
+    list.length = keep;
   }
 
   payDelivery(s, v) {
@@ -563,7 +703,7 @@ export class Game {
       r.dist = pathLength(pt);
       r.freeTime = treeOf(r.from).cost[r.to.spurIn.id];
       const g = GOODS[r.goods];
-      r.perTon = g.price * (0.7 + r.dist / 150);
+      r.perTon = g.price * (0.91 + r.dist / 115);
     }
   }
 
@@ -606,11 +746,9 @@ export class Game {
     v.price = price;
     v.leg = 0;
     v.path = route.pathBack;
-    v.state = 'queue';
-    v.yardT = 0;
     route.trucks.push(v);
     if (route.trucks.length === 1) this.routeVer++;
-    route.from.yard.push(v);
+    this.parkNow(route.from, v);
     route.opened = true;
     return v;
   }
@@ -636,6 +774,7 @@ export class Game {
   }
 
   removeTruck(v) {
+    this.dropLot(v);
     this.traffic.extract(v);
     this.traffic.vehicles.delete(v);
     const r = v.route;
@@ -643,6 +782,7 @@ export class Game {
     if (i >= 0) { r.trucks.splice(i, 1); if (!r.trucks.length) this.routeVer++; }
   }
   removeTruckFromSim(v) {
+    this.dropLot(v);
     this.traffic.vehicles.delete(v);
     const r = v.route;
     const i = r.trucks.indexOf(v);
@@ -798,9 +938,7 @@ export class Game {
             v.cargo = 0;
             v.leg = 0;
           }
-          v.state = 'queue';
-          v.yardT = 0;
-          v.route.from.yard.push(v);
+          this.parkNow(v.route.from, v);
           moved++;
         }
       }
@@ -816,6 +954,7 @@ export class Game {
   tick(dt) {
     this.time += dt;
     this.traffic.step(dt);
+    this.stepLot(dt);
     this.econT += dt;
     while (this.econT >= ECON_DT) {
       this.stepEconomy(ECON_DT);
@@ -1010,6 +1149,7 @@ export class Game {
         }
         if (g.traffic.placeMidway(v, idx, Math.random())) {
           r.from.yard.splice(r.from.yard.indexOf(v), 1);
+          g.dropLot(v);
         } else {
           v.leg = 0; v.path = r.pathBack; v.cargo = 0; v.goods = null;
         }

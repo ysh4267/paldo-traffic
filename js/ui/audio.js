@@ -1,6 +1,13 @@
 // 효과음은 파일 없이 Web Audio로 합성하고, 배경음만 음원 파일을 튼다
-const MUSIC_SRC = 'audio/we-drove-all-night.mp3';
-// 슬라이더를 끝까지 올렸을 때의 크기. 원곡이 꽤 크게 녹음되어 있어 낮춰서 튼다
+// 전부 CC0 곡이다. gain은 곡마다 크기를 맞추는 값
+export const MUSIC_TRACKS = [
+  { file: 'audio/sunset-plains.mp3', title: 'Sunset Plains', artist: 'Yoiyami', gain: 1 },
+  { file: 'audio/piano-melody.mp3', title: 'Piano melody', artist: 'bramd', gain: 0.77 },
+  { file: 'audio/wooden-inn.mp3', title: 'Wooden Inn', artist: 'Indieteur', gain: 1.35 },
+  { file: 'audio/deep-blue-piano.mp3', title: 'Deep Blue Ambient Piano', artist: 'Yoiyami', gain: 1 },
+  { file: 'audio/serenade-guitar.mp3', title: 'Serenade Guitar', artist: 'Pro Sensory', gain: 1 },
+];
+// 슬라이더를 끝까지 올렸을 때의 크기
 const MUSIC_LEVEL = 0.5;
 
 export class Sound {
@@ -16,7 +23,11 @@ export class Sound {
     this.musicHidden = false;
     this.musicTarget = -1;
     this.musicPauseT = 0;
+    this.trackIndex = Math.floor(Math.random() * MUSIC_TRACKS.length);
+    this.onTrack = null;
+    this.badTracks = 0;
   }
+  get track() { return MUSIC_TRACKS[this.trackIndex]; }
   unlock() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -35,14 +46,19 @@ export class Sound {
     const want = this.musicOn && !this.musicHidden && this.musicVolume > 0;
     if (!this.music) {
       if (!want) return;
-      this.music = new Audio(MUSIC_SRC);
-      this.music.loop = true;
+      this.music = new Audio(this.track.file);
+      // 곡이 끝나면 다음 곡으로. 못 읽는 곡은 건너뛴다
+      this.music.addEventListener('ended', () => this.nextTrack());
+      this.music.addEventListener('playing', () => { this.badTracks = 0; });
+      this.music.addEventListener('error', () => {
+        if (++this.badTracks < MUSIC_TRACKS.length) this.nextTrack();
+      });
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.value = 0;
       this.ctx.createMediaElementSource(this.music).connect(this.musicGain);
       this.musicGain.connect(this.ctx.destination);
     }
-    const target = want ? this.musicVolume * MUSIC_LEVEL : 0;
+    const target = want ? this.musicVolume * MUSIC_LEVEL * this.track.gain : 0;
     if (target !== this.musicTarget) {
       this.musicTarget = target;
       this.musicGain.gain.setTargetAtTime(target, this.ctx.currentTime, want ? 0.4 : 0.15);
@@ -53,6 +69,16 @@ export class Sound {
     } else if (!this.music.paused) {
       this.musicPauseT = setTimeout(() => this.music.pause(), 800);
     }
+  }
+  nextTrack() {
+    this.trackIndex = (this.trackIndex + 1) % MUSIC_TRACKS.length;
+    if (this.music) {
+      this.music.src = this.track.file;
+      this.musicTarget = -1;
+      this.syncMusic();
+      if (this.musicOn && !this.musicHidden && this.musicVolume > 0) this.music.play().catch(() => {});
+    }
+    if (this.onTrack) this.onTrack();
   }
   setMusicVolume(v) { this.musicVolume = v; this.syncMusic(); }
   setMusicOn(on) { this.musicOn = on; this.syncMusic(); }
