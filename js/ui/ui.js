@@ -1309,7 +1309,7 @@ export class UI {
     ];
     if (nodes.length) body.push(h('div', { class: 'sec', key: 'nodes' }, h('h3', null, '막히는 교차로'), nodes.map((q) => (q.site ? this.spotSite(q.site, q.head) : this.spotNode(q)))));
     if (roads.length) body.push(this.spotRoads(roads));
-    if (sel.sites.length) body.push(h('div', { class: 'sec', key: 'sites' }, h('h3', null, '상하차장'), sel.sites.map((s) => this.spotSite(s, false))));
+    if (sel.sites.length) body.push(h('div', { class: 'sec', key: 'sites' }, h('h3', null, '상하차장'), sel.sites.map((s) => this.spotSite(s, false))), this.spotLot());
     if (hidden > 0) body.push(h('button', { class: 'more-btn', key: 'all', onclick: () => { this.routeAll = true; this.renderInspector(true); } }, `${hidden}곳 더 보기`, ico('chevron', 'turn-down')));
     return [
       this.head(null, `${r.from.name} → ${r.to.name}`, `${GOODS[r.goods].name} · ${Math.round(r.dist)}km · 트럭 ${r.trucks.length}대`, () => this.select(null)),
@@ -1375,6 +1375,18 @@ export class UI {
         class: 'btn up', key: 'bay', disabled: g.money < cost, 'data-tip': `상하차장 ${s.bays} → ${s.bays + 1}칸\n진입로 정체가 큰길까지 번지는 것을 막아 줍니다.`,
         onclick: () => { if (g.buyBay(s)) this.afterSpot(s.x, s.y); else this.sound.deny(); },
       }, h('span', null, '상하차장 +1칸'), h('span', { class: 'price' }, fmtWon(cost))) : h('p', { class: 'status', key: 'max' }, '상하차장을 다 늘렸습니다.'));
+  }
+  // 길은 뚫렸는데 거점에서 시간이 걸릴 때 그 자리에서 바로 연구한다
+  spotLot() {
+    const g = this.game, u = UPGRADES.find((q) => q.id === 'lot');
+    const lv = g.upg.lot, cost = g.upgradeCostOf('lot');
+    return h('div', { class: 'sec', key: 'lot-tech' }, h('h3', null, '주차장'),
+      h('div', { class: 'spot', key: 'lot' },
+        h('p', { class: 'status', key: 'now' }, `${u.name} ${lv}단계 · ${u.fmt(lv * u.per)}`),
+        lv < u.max ? h('button', {
+          class: 'btn up', key: 'buy', disabled: g.money < cost, 'data-tip': u.desc,
+          onclick: () => { if (g.buyUpg('lot')) { this.sound.buy(); this.renderInspector(true); this.renderTop(); } else this.sound.deny(); },
+        }, h('span', null, `${u.fmt((lv + 1) * u.per)}로 올리기`), h('span', { class: 'price' }, fmtWon(cost))) : h('p', { class: 'status', key: 'max' }, '최고 단계입니다.')));
   }
   spotRoads(list) {
     const g = this.game;

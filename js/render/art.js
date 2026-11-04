@@ -92,6 +92,7 @@ export const ICONS = {
   engine: S(line('M9 9 20 20 9 31M21 9 32 20 21 31', 4.2)),
   crate: S(line('M7 13 20 6 33 13V28L20 35 7 28ZM7 13 20 20 33 13M20 20V35', 3)),
   forklift: S(line('M13 33V8M6 15 13 8 20 15M27 7V32M20 25 27 32 34 25', 3.4)),
+  parking: S(`<rect x="5" y="5" width="30" height="30" rx="6" fill="none" stroke="currentColor" stroke-width="3.200"/>` + line('M15.500 29V11.500H21.500A5.800 5.800 0 0 1 21.500 23.100H15.500', 3.8)),
   clock: S(ring(20, 20, 14.500) + line('M20 11V20.500L26.500 24.500', 3.4)),
   nav: S(solid('M20 4C12.500 4 7 10 7 16.500 7 25.500 20 36.500 20 36.500S33 25.500 33 16.500C33 10 27.500 4 20 4ZM20 11a5.500 5.500 0 1 0 0 11a5.500 5.500 0 1 0 0-11Z')),
   smartsig: S(`<rect x="6" y="6" width="13" height="28" rx="5.500" fill="none" stroke="currentColor" stroke-width="3"/>${dot(12.500, 13, 2.600)}${dot(12.500, 20, 2.600)}${dot(12.500, 27, 2.600)}` + line('M25 14a8.500 8.500 0 0 1 0 12M30.500 9.500a15 15 0 0 1 0 21', 3)),

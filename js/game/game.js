@@ -147,6 +147,7 @@ export class Game {
     this.techs = new Set();
     this.upg = {};
     for (const u of UPGRADES) this.upg[u.id] = 0;
+    this.lotF = 1;      // 주차장 안의 시간이 흐르는 배수
     this.time = 0;
     this.econT = 0;
     this.income = 0;       // 초당 수익 (이동 평균)
@@ -382,7 +383,7 @@ export class Game {
           v.passed(L.seg);
           v.dOdo = dOdo;
           v.dV = dV;
-          v.v = speed;
+          v.v = Math.min(speed * this.lotF, first.speed * v.speedF);
           this.dropLot(v);
         }
       }
@@ -462,7 +463,7 @@ export class Game {
     if (v.leg === 1 && s.inbound >= s.bays * 3) return 0;
     const lot = this.lotOf(s);
     if (!lot.canTake() || lot.waiting >= LOT_BUSY) return 0;
-    return lot.entrySpeed(v, LOT_V);
+    return lot.entrySpeed(v, LOT_V) * this.lotF;
   }
 
   // 트럭이 경로 끝(거점)에 도착
@@ -490,17 +491,18 @@ export class Game {
   // 거리로만 어림하면 교차로가 잦은 노선이나 엔진 연구를 많이 한 트럭은 빈 길에서도 막힌 것처럼 보인다
   quietTime(r, leg, model) {
     const path = leg === 1 ? r.pathTo : r.pathBack;
-    if (r.quietFor !== path || r.quietV !== this.net.version || r.quietS !== this.upg.speed) {
+    if (r.quietFor !== path || r.quietV !== this.net.version || r.quietS !== this.upg.speed || r.quietL !== this.lotF) {
       if (leg === 1 || !r.quietC) r.quietC = new Map();
       r.quietFor = path;
       r.quietV = this.net.version;
       r.quietS = this.upg.speed;
+      r.quietL = this.lotF;
       r.quietC.clear();
     }
     const key = leg * 100 + TRUCKS.indexOf(model);
     let t = r.quietC.get(key);
     if (t === undefined) {
-      t = this.freeRun(path, model, leg === 1) * QUIET_SLOPE + QUIET_EXIT + (leg === 1 ? r.shipTo : r.shipBack) * QUIET_SHIP;
+      t = this.freeRun(path, model, leg === 1) * QUIET_SLOPE + QUIET_EXIT / this.lotF + (leg === 1 ? r.shipTo : r.shipBack) * QUIET_SHIP;
       r.quietC.set(key, t);
     }
     return t;
@@ -536,13 +538,13 @@ export class Game {
     if (!vm.length) return 0;
     const acc = model.acc * (loaded ? 0.7 : 1), brk = model.brk * (loaded ? 0.88 : 1);
     const v = new Array(vm.length);
-    let u = LOT_LEAVE_V;
+    let u = LOT_LEAVE_V * this.lotF;
     for (let i = 0; i < vm.length; i++) {
       const r = u >= vm[i] ? 1 : u / vm[i];
       u = Math.min(vm[i], Math.sqrt(u * u + 2 * acc * (1 - r * r) * dsv[i]));
       v[i] = u;
     }
-    let w = LOT_V, t = 0;
+    let w = LOT_V * this.lotF, t = 0;
     for (let i = vm.length - 1; i >= 0; i--) {
       w = Math.min(v[i], Math.sqrt(w * w + 2 * brk * dsv[i]));
       t += dsv[i] / Math.max(w, 0.3);
@@ -700,6 +702,8 @@ export class Game {
     if (lane) v.passed(lane);
     v.state = 'lot';
     v.ci = 0;
+    v.v /= this.lotF;
+    v.a /= this.lotF * this.lotF;
     v.lot = this.newLotState(s, stall, 'in', seg, lane ? v.s - lane.edge.L : 0);
     s.lot.enter(v);
     this.lotVehicles.add(v);
@@ -761,7 +765,13 @@ export class Game {
     v.lot = null;
     this.lotVehicles.delete(v);
   }
+  // 주차장 안에서는 시간이 lotF배로 흐른다. 안의 규칙은 그대로이고 움직임과 기다림이 모두 그만큼 짧아진다.
+  // 한 걸음이 길어지지 않게 나눠서 돈다
   stepLot(dt) {
+    const n = Math.ceil(this.lotF);
+    for (let i = 0; i < n; i++) this.stepLotOnce((dt * this.lotF) / n);
+  }
+  stepLotOnce(dt) {
     const list = this.lotMovers;
     let keep = 0;
     for (let i = 0; i < list.length; i++) {
@@ -780,7 +790,8 @@ export class Game {
       const look = (v.v * v.v) / (2 * v.brake) + LOT_LOOK;
       let gap = remain, leadV = 0, head = 0, slowV, slowD;
       if (L.phase === 'out') gap = this.lotExitGap(v, remain, look);
-      if (L.phase === 'out' && gap === Infinity) { slowV = LOT_LEAVE_V; slowD = remain; }
+      // 나가서 달릴 속도보다 빠르게 나가지는 않는다
+      if (L.phase === 'out' && gap === Infinity) { slowV = Math.min(LOT_LEAVE_V, (v.path[0].speed * v.speedF) / this.lotF); slowD = remain; }
       if (L.phase === 'out' && gap < Infinity) leadV = this.lotExitV;
       let scanTo = Math.min(look, remain);
       if (L.phase === 'in') {
@@ -874,7 +885,7 @@ export class Game {
       const t = q.tail();
       if (!t) continue;
       const g = remain + t.s - t.len - GAP;
-      if (g < gap && g < remain) { gap = g; this.lotExitV = t.v; }
+      if (g < gap && g < remain) { gap = g; this.lotExitV = t.v / this.lotF; }
     }
     if (!this.traffic.bestLane(first, v.path[1] || null, GAP)) {
       if (remain - 0.02 < gap) { gap = Math.max(0, remain - 0.02); this.lotExitV = 0; }
@@ -1429,11 +1440,20 @@ export class Game {
     this.money -= c;
     this.upg[id]++;
     if (id === 'speed') this.applySpeedTech();
+    if (id === 'lot') this.applyLotTech();
     return true;
   }
   applySpeedTech() {
     const f = 1 + this.upg.speed * 0.05;
     for (const v of this.traffic.vehicles) v.speedF = v.model.speed * f;
+  }
+
+  // 입출차 시간 −n%면 주차장 안의 시간이 1 / (1 − n)배로 흐른다
+  applyLotTech() {
+    const per = UPGRADES.find((u) => u.id === 'lot').per;
+    this.lotF = 1 / (1 - this.upg.lot * per);
+    this.traffic.lotF = this.lotF;
+    this.traffic.hooks.arriveV = LOT_V * this.lotF;
   }
 
   // ── 환생 ──────────────────────────────────────────────
@@ -1733,6 +1753,7 @@ export class Game {
       });
     }
     g.applySpeedTech();
+    g.applyLotTech();
     return g;
   }
 

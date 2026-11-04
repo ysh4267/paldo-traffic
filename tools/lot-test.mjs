@@ -1,5 +1,5 @@
 // 주차장 점검: 사고팔고 구난하고 저장을 되살려도 칸 수가 어긋나지 않고 트럭이 멈춰 서지 않으며, 안에서 움직이는 트럭끼리 겹치지 않는지 본다.
-// 사용법: node tools/lot-test.mjs [분]
+// 사용법: node tools/lot-test.mjs [분] [주차 유도 시스템 단계]
 import fs from 'node:fs';
 import { Game } from '../js/game/game.js';
 import { TRUCKS } from '../js/game/defs.js';
@@ -11,6 +11,7 @@ g.regions[4].pts = g.regionGoal(4) * 0.9;
 g.updateSiteAvailability(true);
 for (const id of ['cargo5', 'trailer', 'express', 'tow']) g.techs.add(id);
 const MINUTES = Number(process.argv[2]) || 12;
+for (let i = 0; i < Number(process.argv[3] || 0); i++) g.buyUpg('lot');
 const DT = 1 / 30;
 let seed = 12345;
 const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };

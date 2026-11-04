@@ -89,6 +89,7 @@ export const UPGRADES = [
   { id: 'speed', name: '엔진 튜닝', icon: 'engine', base: 3 * EOK, mult: 3.4, max: 10, per: 0.05, fmt: (v) => `속도 +${Math.round(v * 100)}%`, desc: '트럭이 더 빨리 달립니다. 교차로도 더 자주 만납니다.' },
   { id: 'cap', name: '적재 최적화', icon: 'crate', base: 5 * EOK, mult: 3.4, max: 10, per: 0.1, fmt: (v) => `적재량 +${Math.round(v * 100)}%`, desc: '같은 트럭에 더 많이 싣습니다.' },
   { id: 'bay', name: '상하차 자동화', icon: 'forklift', base: 4 * EOK, mult: 3.2, max: 10, per: 0.08, fmt: (v) => `상하차 시간 −${Math.round(v * 100)}%`, desc: '상하차장에서 머무는 시간이 줄어듭니다.' },
+  { id: 'lot', name: '주차 유도 시스템', icon: 'parking', base: 2 * EOK, mult: 3.2, max: 10, per: 0.05, fmt: (v) => `입출차 시간 −${Math.round(v * 100)}%`, desc: '거점 주차장을 드나드는 시간이 줄어듭니다. 나갈 차례를 기다리는 시간도 함께 줄어듭니다.' },
   { id: 'ontime', name: '정시 배송 관리', icon: 'clock', base: 10 * EOK, mult: 3.2, max: 10, per: 0.04, fmt: (v) => `정시 보너스 +${Math.round(v * 100)}%`, desc: '제시간 도착 시 받는 보너스가 커집니다.' },
 ];
 
@@ -107,7 +108,7 @@ export const PERKS = [
   { id: 'fame', name: '업계 평판', icon: 'star', now: true, base: 5, grow: 1.5, max: 10, to: (n) => `+${n * 10}%`, fmt: (n) => `환생 때 얻는 명성 +${n * 10}%`, desc: '이 보너스를 먼저 사 두면 환생할 때마다 명성을 더 받습니다.' },
   { id: 'seed', name: '창업 자금', icon: 'money', base: 1, grow: 1.6, max: 12, to: (n) => fmtWon(START_MONEY * Math.pow(2, n)), fmt: (n) => `시작 자금 ${fmtWon(START_MONEY * Math.pow(2, n))}`, desc: '단계마다 시작 자금이 두 배가 됩니다.' },
   { id: 'tech', name: '기술 이전', icon: 'research', base: 2, grow: 1.3, max: TECHS.length, to: (n) => TECHS[n - 1].name, fmt: (n) => `처음부터 ${TECHS[Math.min(n, TECHS.length) - 1].name}까지 연구 완료`, desc: '연구 목록의 앞에서부터 차례로 처음부터 쓸 수 있습니다.' },
-  { id: 'study', name: '연구 유산', icon: 'engine', base: 5, grow: 1.7, max: 5, to: (n) => `${n}단계`, fmt: (n) => `꾸준히 강해지는 연구 ${n}단계로 시작`, desc: '납품가, 속도, 적재, 상하차, 정시 연구가 이 단계에서 시작합니다.' },
+  { id: 'study', name: '연구 유산', icon: 'engine', base: 5, grow: 1.7, max: 5, to: (n) => `${n}단계`, fmt: (n) => `꾸준히 강해지는 연구 ${n}단계로 시작`, desc: '납품가, 속도, 적재, 상하차, 입출차, 정시 연구가 이 단계에서 시작합니다.' },
   { id: 'roads', name: '도로 유산', icon: 'bypass', base: 30, grow: 1, max: 1, to: () => '', fmt: () => '환생해도 교차로, 차로, 표지, 대교 유지', desc: '이번 회차에 깐 교통 시설과 도로가 다음 회차에도 그대로 남습니다.' },
 ];
 

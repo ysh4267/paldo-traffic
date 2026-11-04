@@ -113,6 +113,7 @@ export class Traffic {
     this.ferries = [];
     this.arrivals = []; // 배에서 내린 차
     this.smartSignals = false;
+    this.lotF = 1;      // 주차장 안의 시간이 흐르는 배수. 주차장 안의 트럭 속도는 그 시간 기준이다
     this.statT = 0;
     this.nextId = 1;
     for (const r of net.roads) if (r.kind === 'f') { const fy = new Ferry(r); r.ferryObj = fy; this.ferries.push(fy); }
@@ -708,7 +709,7 @@ export class Traffic {
           if (moved > le.len + GAP || (le.state !== 'road' && le.state !== 'lot')) lane.lastExit = null;
           else if (c.granted || le.state === 'lot') {
             const g2 = dStop + moved - le.len - GAP;
-            if (g2 < gap) { gap = g2; leadV = le.v; }
+            if (g2 < gap) { gap = g2; leadV = le.state === 'lot' ? le.v * this.lotF : le.v; }
           }
         }
       }
