@@ -81,6 +81,11 @@ class App {
       this.fitBoxAll(0);
     }
     this.game.events.length = 0;
+    if (this.game.flags.reborn) {
+      const run = this.game.flags.reborn + 1;
+      delete this.game.flags.reborn;
+      setTimeout(() => this.ui.showBanner('환생', `${run}회차 시작`, '명성 보너스를 안고 충청북도에서 다시 달립니다'), 900);
+    }
     this.drawMiniBase();
     this.drawMini();
   }
@@ -95,6 +100,18 @@ class App {
   resetGame() {
     this.noSave = true;
     store.del(SAVE_KEY);
+    window.location.reload();
+  }
+
+  // 다음 회차를 저장해 두고 그것으로 다시 연다
+  rebirth() {
+    const next = this.game.rebirthSave();
+    if (!next) return;
+    if (!store.set(SAVE_KEY, JSON.stringify(next))) {
+      this.ui.toast('warn', '저장할 수 없어 환생하지 못했습니다', '브라우저 저장 공간을 확인하세요');
+      return;
+    }
+    this.noSave = true;
     window.location.reload();
   }
 
@@ -407,6 +424,7 @@ class App {
         ui.showBanner('신규 권역 개통', `${e.region.short} 방면`, e.region.index === 5 ? '뱃길이 열렸습니다. 항구에서 카페리로 제주까지 갑니다.' : `${e.region.name}이 열렸습니다. 새 거점이 차례로 문을 엽니다.`);
         this.fitToStage(1.8);
         ui.toast('star', `${e.region.name} 개통`, '납품 목표가 새로 시작됩니다');
+        if (g.canRebirth()) ui.toast('star', '환생이 열렸습니다', `지금 환생하면 명성 ${g.fameGain()}. 더 벌수록 늘어납니다`, () => ui.openModal('rebirth'));
         ui.renderDock();
         this.save();
       } else if (e.type === 'site') {
@@ -442,7 +460,7 @@ class App {
   // 시뮬레이션을 realDt초만큼 진행한다
   advance(realDt, budgetMs) {
     const m = this.ui.modalName;
-    const running = this.started && (!m || m === 'build' || m === 'research');
+    const running = this.started && (!m || m === 'build' || m === 'research' || m === 'rebirth');
     if (!running || this.speed === 0) return;
     this.acc += realDt * this.speed;
     const start = performance.now();

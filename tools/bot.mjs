@@ -1,5 +1,6 @@
 // 밸런스 확인용 자동 플레이어. 실제 게임 코드를 그대로 돌려 진행 속도와 정체를 기록한다.
-// 사용법: node tools/bot.mjs [분] [human|notools] [생각 간격(초)]
+// 사용법: node tools/bot.mjs [분] [human|notools] [생각 간격(초)] [명성 보너스 JSON]
+// 예: node tools/bot.mjs 240 human 2.5 '{"total":20,"perks":{"pay":3,"seed":3}}' 이면 명성 20을 모아 그 보너스로 환생한 회차를 잰다
 import fs from 'node:fs';
 import { Game } from '../js/game/game.js';
 import { TECHS, UPGRADES, TRUCKS, GOODS, fmtWon, fmtTime } from '../js/game/defs.js';
@@ -9,7 +10,7 @@ const data = JSON.parse(fs.readFileSync('data/korea.json', 'utf8'));
 const MINUTES = Number(process.argv[2]) || 30;
 const MODE = process.argv[3] || 'human';
 const THINK = Number(process.argv[4]) || 2.5; // 사람이 몇 초마다 한 번 움직이는가
-const g = new Game(data);
+const g = process.argv[5] ? Game.restore(data, Game.freshSave({ runs: 1, fame: 0, earned: 0, best: {}, total: 0, ...JSON.parse(process.argv[5]) })) : new Game(data);
 
 const DT = 1 / 30;
 const log = [];
@@ -124,10 +125,10 @@ for (let t = 0; t < total; t += DT) {
     const e = g.events.shift();
     if (e.type === 'region') {
       const ms = g.movingStats();
-      log.push(`[${fmtTime(t)}] ★ ${e.region.short} 개통 money=${fmtWon(g.money)} income=${fmtWon(g.income * 60)}/분 trucks=${g.truckCount} stopped=${ms.stopped}/${ms.onRoad}`);
+      log.push(`[${fmtTime(t)}] ★ ${e.region.short} 개통 money=${fmtWon(g.money)} income=${fmtWon(g.income * 60)}/분 trucks=${g.truckCount} stopped=${ms.stopped}/${ms.onRoad} 번 돈=${fmtWon(g.totalEarned)}`);
     }
-    if (e.type === 'alldone') log.push(`[${fmtTime(t)}] ★★ 전국 달성`);
-    if (e.type === 'boom') log.push(`[${fmtTime(t)}] 붐 ${e.level}`);
+    if (e.type === 'alldone') log.push(`[${fmtTime(t)}] ★★ 전국 달성 번 돈=${fmtWon(g.totalEarned)} income=${fmtWon(g.income * 60)}/분 trucks=${g.truckCount}`);
+    if (e.type === 'boom') log.push(`[${fmtTime(t)}] 붐 ${e.level} 번 돈=${fmtWon(g.totalEarned)}`);
     if (e.type === 'tech') events.push(`${fmtTime(t)} ${e.tech.name}`);
     if (e.type === 'project') events.push(`${fmtTime(t)} [건설] ${e.project.name}`);
   }

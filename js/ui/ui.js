@@ -3,7 +3,7 @@
 import { h, ico, raw, patch } from './dom.js';
 import { iconHtml, routeBadge, siteIcon } from '../render/art.js';
 import { MUSIC_TRACKS } from './audio.js';
-import { GOODS, TRUCKS, TECHS, UPGRADES, SITE_KIND_NAME, fmtWon, fmtKo, fmtTon, fmtTime, josa, PROJECT_COST, LANE_PRICE_PER_KM } from '../game/defs.js';
+import { GOODS, TRUCKS, TECHS, UPGRADES, PERKS, SITE_KIND_NAME, fmtWon, fmtKo, fmtTon, fmtTime, josa, PROJECT_COST, LANE_PRICE_PER_KM } from '../game/defs.js';
 
 export const TOOLS = [
   { id: 'select', icon: 't_select', color: '#4a4a46', name: '선택', key: '1', desc: '거점과 교차로, 도로를 눌러 자세히 봅니다.' },
@@ -69,6 +69,7 @@ export class UI {
     this.more = false;
     this.showStats = false;
     this.confirmReset = false;
+    this.confirmRebirth = false;
     this.saveText = '';
     this.coachStep = 0;
     this.coachOff = false;
@@ -101,10 +102,11 @@ export class UI {
   bindKeys() {
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      // 시작 화면에서는 단축키를 받지 않는다. 다른 창이 덮으면 시작할 수 없게 된다
+      if (this.modalName === 'welcome') return;
       const t = TOOLS.find((q) => q.key === e.key);
       if (t) { this.pickTool(t); return; }
       if (e.key === 'Escape') {
-        if (this.modalName === 'welcome') return;
         if (this.modalName) this.closeModal();
         else if (this.area) this.clearArea();
         else if (this.tool !== 'select') this.setTool('select');
@@ -115,6 +117,7 @@ export class UI {
       if (e.key === ' ') { e.preventDefault(); this.app.setSpeed(this.app.speed === 0 ? (this.app.lastSpeed || 1) : 0); }
       if (e.key === 'r' || e.key === 'R') this.openModal('research');
       if (e.key === 'b' || e.key === 'B') this.openModal('build');
+      if (e.key === 'h' || e.key === 'H') this.openModal('rebirth');
       if (e.key === 'l' || e.key === 'L') this.toggleList();
       if (e.key === 't' || e.key === 'T') this.pickTool(TOOLS.find((q) => q.id === 'fleet'));
       if (e.key === 'm' || e.key === 'M') this.setMusic(!this.sound.musicOn);
@@ -507,7 +510,8 @@ export class UI {
       this.kv('배송', `${g.deliveries.toLocaleString('en-US')}회`),
       this.kv('누적 물동량', fmtTon(g.totalTons)),
       this.kv('누적 수익', fmtWon(g.totalEarned)),
-      this.kv('운행 시간', fmtTime(g.time)));
+      this.kv('운행 시간', fmtTime(g.time)),
+      g.legacy.runs > 0 && this.kv('회차', `${g.legacy.runs + 1}회차 · 명성 ${g.legacy.fame}`));
   }
 
   renderMenu() {
@@ -516,13 +520,18 @@ export class UI {
       || UPGRADES.some((u) => g.upg[u.id] < u.max && g.money >= g.upgradeCostOf(u.id));
     const buildReady = g.projects.some((p) => g.projectAvailable(p) && g.money >= g.projectPrice(p));
     const btn = (icon, tip, onclick, dot, on) => h('button', { key: icon, class: on ? 'on' : '', onclick, 'data-tip': tip, 'aria-label': tip }, ico(icon), dot && h('i', { class: 'dot' }));
+    // 환생은 권역이 하나 더 열리면 보여 준다. 처음부터 다 꺼내 놓으면 낯설다
+    const L = g.legacy;
+    const rebirthShown = g.stage >= 1 || L.runs > 0 || L.fame > 0;
+    const rebirthReady = g.canRebirth() || PERKS.some((p) => g.perk(p.id) < p.max && L.fame >= g.perkCost(p.id));
     patch(this.el.menu, [
       btn('research', '연구 (R)', () => this.openModal('research'), researchReady),
       btn('build', '우회도로·대교 건설 (B)', () => this.openModal('build'), buildReady),
       btn('list', '거점 목록 (L)', () => { this.sound.click(); this.toggleList(); }, false, this.listOpen),
+      rebirthShown && btn('star', '환생과 명성 보너스 (H)', () => this.openModal('rebirth'), rebirthReady),
       btn(this.sound.musicOn ? 'sound' : 'mute', this.sound.musicOn ? `배경음 끄기 (M)\n지금 곡: ${this.sound.track.title}` : '배경음 켜기 (M)', () => this.setMusic(!this.sound.musicOn)),
       btn('gear', '설정과 저장', () => this.openModal('settings')),
-    ]);
+    ].filter(Boolean));
   }
 
   // 지금 손대면 좋은 곳을 한 줄씩 알려 준다
@@ -981,6 +990,7 @@ export class UI {
   advice() {
     const g = this.game;
     const out = [];
+    if (g.canRebirth()) out.push({ title: `환생 가능 · 명성 +${g.fameGain()}`, sub: '처음부터 다시 달리며 영구 보너스를 쌓습니다', tone: 'info', go: () => this.openModal('rebirth') });
     const tech = TECHS.find((t) => !g.techs.has(t.id) && g.techVisible(t) && g.money >= t.cost);
     if (tech) out.push({ title: `${tech.name} 연구 가능`, sub: fmtWon(tech.cost), tone: 'info', go: () => this.openModal('research') });
     const stuck = g.jams.find((j) => j.stuck > 40 && !j.site);
@@ -1128,7 +1138,7 @@ export class UI {
     if (routes.length && GOODS[s.goods].growth) kids.push(h('p', { class: 'status', key: 'grow' }, `값은 싸지만 도시에 납품하면 도시가 ${GOODS[s.goods].growth}배 빨리 자랍니다.`));
     for (const q of routes) {
       const cap = g.truckCap(TRUCKS[m]);
-      const trip = q.perTon * cap * (1 + g.upg.pay * 0.14);
+      const trip = q.perTon * cap * g.payMult();
       const afford = g.truckAffordable(q, m);
       const n = this.buyCount === 0 ? Math.max(1, afford) : this.buyCount;
       const price = g.truckBatchPrice(q, m, n);
@@ -1371,13 +1381,14 @@ export class UI {
       patch(m, []);
     }, 150);
     this.confirmReset = false;
+    this.confirmRebirth = false;
     this.saveText = '';
     this.renderTop();
   }
   renderModal() {
     const n = this.modalName;
     if (!n) return;
-    const v = n === 'research' ? this.researchDialog() : n === 'build' ? this.buildDialog() : n === 'settings' ? this.settingsDialog() : n === 'welcome' ? this.welcomeDialog() : n === 'offline' ? this.offlineDialog() : n === 'alldone' ? this.allDoneDialog() : null;
+    const v = n === 'research' ? this.researchDialog() : n === 'build' ? this.buildDialog() : n === 'settings' ? this.settingsDialog() : n === 'welcome' ? this.welcomeDialog() : n === 'offline' ? this.offlineDialog() : n === 'alldone' ? this.allDoneDialog() : n === 'rebirth' ? this.rebirthDialog() : null;
     patch(this.el.modal, v ? [v] : []);
     this.el.modal.onclick = (e) => { if (e.target === this.el.modal && n !== 'welcome') this.closeModal(); };
   }
@@ -1410,6 +1421,48 @@ export class UI {
         techRows.length > 0 && h('div', { class: 'list', key: 'tech' }, h('h3', null, '새로운 기술'), techRows),
         h('div', { class: 'list', key: 'upg' }, h('h3', null, '꾸준히 강해지는 연구'), upgRows),
         (done.length > 0 || hidden > 0) && h('p', { class: 'foot', key: 'foot' }, done.length > 0 && `완료: ${done.map((t) => t.name).join(', ')}. `, hidden > 0 && `권역이 더 개발되면 ${hidden}개가 더 열립니다.`)));
+  }
+
+  // 환생과 명성 상점
+  rebirthDialog() {
+    const g = this.game, L = g.legacy;
+    const can = g.canRebirth();
+    const gain = g.fameGain();
+    const perkRow = (p) => {
+      const lv = g.perk(p.id), maxed = lv >= p.max, cost = g.perkCost(p.id);
+      return h('div', { class: 'row', key: p.id, 'data-tip': p.desc },
+        h('span', { class: 'disc' }, ico(p.icon)),
+        h('div', { class: 't' }, h('b', null, p.max > 1 ? `${p.name} ${lv}/${p.max}` : p.name), h('small', null, maxed ? `${p.fmt(lv)} · 최고 단계` : lv ? `${p.fmt(lv)} → ${p.to(lv + 1)}` : p.fmt(1))),
+        !maxed && h('button', { class: 'btn buy', disabled: L.fame < cost, onclick: () => { if (g.buyPerk(p.id)) { this.sound.buy(); this.renderModal(); this.renderTop(); } else this.sound.deny(); } }, h('span', { class: 'price' }, `명성 ${cost}`)));
+    };
+    const lost = g.perk('roads') ? '돈, 트럭, 연구, 권역 진행' : '돈, 트럭, 연구, 권역 진행, 교차로와 차로';
+    let action;
+    if (!can) action = h('p', { class: 'status', key: 'lock' }, `${g.regions[g.regions.length - 1].short}까지 모든 권역을 열면 환생할 수 있습니다. 지금 ${g.stage + 1} / ${g.regions.length} 권역입니다.`);
+    else if (!this.confirmRebirth) {
+      action = h('button', { class: 'btn buy', key: 'go', disabled: gain < 1, onclick: () => { this.sound.click(); this.confirmRebirth = true; this.renderModal(); } }, h('span', null, '환생하기'), h('span', { class: 'price' }, `명성 +${gain}`));
+    } else {
+      action = [
+        h('p', { class: 'status warn', key: 'warn' }, `${lost}가 처음으로 돌아갑니다. 되돌릴 수 없습니다.`),
+        h('div', { class: 'btn-row', key: 'yes' },
+          h('button', { class: 'btn', onclick: () => { this.sound.click(); this.confirmRebirth = false; this.renderModal(); } }, '취소'),
+          h('button', { class: 'btn buy', onclick: () => this.app.rebirth() }, `환생하고 명성 +${gain}`)),
+      ];
+    }
+    return h('div', { class: 'dialog', role: 'dialog', 'aria-label': '환생' },
+      this.dialogHead('환생', `${L.runs + 1}회차 · 보유 명성 ${L.fame}`),
+      h('div', { class: 'p-body' },
+        h('div', { class: 'sec', key: 'now' },
+          h('div', { class: 'kvs', key: 'kvs' },
+            this.kv('이번 회차에 번 돈', fmtWon(g.totalEarned)),
+            this.kv(can ? '지금 환생하면' : '지금까지 번 돈으로는', `명성 +${gain}`),
+            this.kv('명성 1을 더 받으려면', `${fmtWon(g.fameNext())} 더`),
+            L.runs > 0 && this.kv('지난 환생', `${L.runs}회`),
+            L.total > 0 && this.kv(`모은 명성 ${L.total}`, `납품 대금과 실적 +${L.total}%`),
+            L.best.time > 0 && this.kv('가장 빠른 전국 개통', fmtTime(L.best.time))),
+          action),
+        h('div', { class: 'list', key: 'perks-now' }, h('h3', null, '바로 듣는 보너스'), PERKS.filter((p) => p.now).map(perkRow)),
+        h('div', { class: 'list', key: 'perks-next' }, h('h3', null, '다음 회차부터 듣는 보너스'), PERKS.filter((p) => !p.now).map(perkRow)),
+        h('p', { class: 'foot', key: 'foot' }, '모은 명성 1마다 납품 대금과 실적이 1% 오릅니다. 명성을 써도 줄지 않습니다. 명성은 언제든 쓸 수 있고, 환생해도 명성과 보너스, 기록은 남습니다. 많이 벌수록 명성을 더 받지만 벌이가 늘수록 효율은 줄어듭니다.')));
   }
 
   buildDialog() {
@@ -1461,10 +1514,10 @@ export class UI {
             h('button', { class: 'btn', onclick: () => { const t = document.getElementById('set-savebox').value.trim(); if (!t) { this.toast('warn', '저장 코드를 먼저 붙여넣으세요'); return; } app.importSave(t); } }, '코드 불러오기')),
           h('textarea', { id: 'set-savebox', class: 'savebox', placeholder: '저장 코드가 여기에 나타납니다. 불러올 코드를 붙여넣어도 됩니다.', value: this.saveText, spellcheck: 'false' }),
           this.confirmReset
-            ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, '정말 처음부터'))
+            ? h('div', { class: 'btn-row' }, h('button', { class: 'btn', onclick: () => { this.confirmReset = false; this.renderModal(); } }, '취소'), h('button', { class: 'btn danger', onclick: () => app.resetGame() }, this.game.legacy.total > 0 ? '명성까지 지우고 처음부터' : '정말 처음부터'))
             : h('button', { class: 'btn danger', onclick: () => { this.confirmReset = true; this.renderModal(); } }, '처음부터 다시 시작')),
         h('div', { class: 'sec', key: 'keys' }, h('h3', null, '조작법'),
-          h('p', { class: 'credit' }, '왼쪽으로 끌기: 여러 거점 고르기 · 오른쪽으로 끌기 또는 Shift를 누르고 끌기: 지도 이동 · Shift나 Ctrl을 누르고 거점 누르기: 넣고 빼기 · 손가락: 끌면 이동, 길게 눌렀다 끌면 고르기 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 차로 도구로 끌기: 범위 넓히기 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · T: 눌러서 고르기 · M: 배경음 · Esc 또는 우클릭: 취소')),
+          h('p', { class: 'credit' }, '왼쪽으로 끌기: 여러 거점 고르기 · 오른쪽으로 끌기 또는 Shift를 누르고 끌기: 지도 이동 · Shift나 Ctrl을 누르고 거점 누르기: 넣고 빼기 · 손가락: 끌면 이동, 길게 눌렀다 끌면 고르기 · 휠 또는 두 손가락: 확대 · 1~8: 도구 선택 · 차로 도구로 끌기: 범위 넓히기 · 스페이스바: 일시정지 · R: 연구 · B: 건설 · L: 거점 목록 · T: 눌러서 고르기 · H: 환생 · M: 배경음 · Esc 또는 우클릭: 취소')),
         h('div', { class: 'sec', key: 'credit' }, h('h3', null, '만든 재료'),
           h('p', { class: 'credit' }, 'Rischer Kriebl의 게임 Incremental Traffic에서 영감을 받아 대한민국 지도로 다시 만든 비공식 팬 프로젝트입니다. 원작의 코드와 그림은 쓰지 않았습니다. 화면 디자인은 Dinosaur Polo Club의 Mini Metro를 참고했습니다.', h('br'), '지도 데이터: 도로·강·지명 © OpenStreetMap contributors (ODbL), 행정구역 KOSTAT(southkorea-maps), 해안선 Natural Earth. 그림은 모두 코드로 그린 벡터입니다.', h('br'), `배경음: ${MUSIC_TRACKS.map((q) => `${q.artist}, ${q.title}`).join(' · ')} (모두 CC0, OpenGameArt). 효과음은 코드로 합성했습니다.`, h('br'), '금액은 실제 시세와 공사비를 바탕으로 잡았고, 값이 너무 싼 벌크 화물만 게임에 맞게 올렸습니다.'))));
   }
@@ -1485,7 +1538,7 @@ export class UI {
     const d = this.modalData;
     return h('div', { class: 'welcome', role: 'dialog', 'aria-label': '돌아오셨습니다' },
       h('h1', null, fmtWon(d.earned)),
-      h('p', { class: 'lead' }, `${fmtTime(d.seconds)} 동안 비운 사이에 벌었습니다. 정체를 풀어 줄 사람이 없어 평소 수익의 절반입니다.`),
+      h('p', { class: 'lead' }, `${fmtTime(d.seconds)} 동안 비운 사이에 벌었습니다. 정체를 풀어 줄 사람이 없어 평소 수익의 ${Math.round(d.share * 100)}%입니다.`),
       h('button', { class: 'cta', onclick: () => this.closeModal() }, h('span', { class: 'arrow' }, '→'), h('span', null, '운행 계속')));
   }
 
@@ -1495,7 +1548,9 @@ export class UI {
       h('h1', null, '전국 물류망 완성'),
       h('p', { class: 'lead' }, `${fmtTime(g.time)} 만에 팔도를 모두 이었습니다. 트럭 ${g.truckCount}대가 누적 ${fmtTon(g.totalTons)}을 날랐습니다.`),
       h('p', { class: 'lead' }, '이제 붐 단계입니다. 전국 납품 실적을 쌓을 때마다 납품가가 15%씩 오릅니다.'),
-      h('button', { class: 'cta', onclick: () => this.closeModal() }, h('span', { class: 'arrow' }, '→'), h('span', null, '계속 운행')));
+      h('p', { class: 'lead' }, `지금 환생하면 명성 ${g.fameGain()}을 얻고 처음부터 다시 달립니다. 더 벌어 둘수록 명성이 늘어납니다.`),
+      h('button', { class: 'cta', onclick: () => this.closeModal() }, h('span', { class: 'arrow' }, '→'), h('span', null, '계속 운행')),
+      h('button', { class: 'btn', key: 'see', onclick: () => this.openModal('rebirth') }, '환생 살펴보기'));
   }
 
   // ── 알림 ───────────────────────────────────────────

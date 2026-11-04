@@ -92,6 +92,25 @@ export const UPGRADES = [
   { id: 'ontime', name: '정시 배송 관리', icon: 'clock', base: 10 * EOK, mult: 3.2, max: 10, per: 0.04, fmt: (v) => `정시 보너스 +${Math.round(v * 100)}%`, desc: '제시간 도착 시 받는 보너스가 커집니다.' },
 ];
 
+// 환생. 이번 회차에 번 돈의 제곱근에 비례해 명성을 얻는다. FAME_REF를 벌면 명성 FAME_BASE
+// 봇 기준으로 모든 권역을 여는 약 3시간에 ₩7조, 전국을 완성하면 ₩70조(명성 63)쯤 번다
+export const FAME_BASE = 20;
+export const FAME_REF = 7 * JO;
+// 명성 보너스. now는 산 즉시 듣고, 나머지는 다음 회차를 시작할 때 듣는다. 값은 base × grow^단계
+export const PERKS = [
+  { id: 'pay', name: '단골 화주', icon: 'won', now: true, base: 2, grow: 1.35, max: 30, to: (n) => `+${n * 10}%`, fmt: (n) => `납품 대금 +${n * 10}%`, desc: '거래처가 늘어 모든 납품 대금이 오릅니다.' },
+  { id: 'pts', name: '물류 인증', icon: 'star', now: true, base: 3, grow: 1.4, max: 20, to: (n) => `+${n * 10}%`, fmt: (n) => `납품 실적 +${n * 10}%`, desc: '납품 실적이 더 크게 쌓여 권역이 빨리 열립니다.' },
+  { id: 'rate', name: '협력 공장', icon: 'forklift', now: true, base: 3, grow: 1.4, max: 20, to: (n) => `+${n * 5}%`, fmt: (n) => `모든 거점 생산 +${n * 5}%`, desc: '물량이 늘어 나를 트럭이 더 필요해집니다.' },
+  { id: 'truck', name: '대량 구매 계약', icon: 'truck_cargo', now: true, base: 2, grow: 1.35, max: 15, to: (n) => `−${n * 3}%`, fmt: (n) => `트럭값 −${n * 3}%`, desc: '모든 차종을 싸게 사고, 차종을 바꿀 때도 덜 듭니다.' },
+  { id: 'build', name: '공사 협약', icon: 'bridge', now: true, base: 2, grow: 1.35, max: 15, to: (n) => `−${n * 4}%`, fmt: (n) => `교통 시설과 도로 공사 −${n * 4}%`, desc: '표지, 신호등, 회전교차로, 입체교차로, 차로, 대교, 카페리가 모두 싸집니다.' },
+  { id: 'offline', name: '야간 운행', icon: 'clock', now: true, base: 2, grow: 1.6, max: 5, to: (n) => `${50 + n * 10}%`, fmt: (n) => `자리 비운 동안 평소 수익의 ${50 + n * 10}%`, desc: '게임을 꺼 둔 동안 들어오는 돈이 늘어납니다.' },
+  { id: 'fame', name: '업계 평판', icon: 'star', now: true, base: 5, grow: 1.5, max: 10, to: (n) => `+${n * 10}%`, fmt: (n) => `환생 때 얻는 명성 +${n * 10}%`, desc: '이 보너스를 먼저 사 두면 환생할 때마다 명성을 더 받습니다.' },
+  { id: 'seed', name: '창업 자금', icon: 'money', base: 1, grow: 1.6, max: 12, to: (n) => fmtWon(START_MONEY * Math.pow(2, n)), fmt: (n) => `시작 자금 ${fmtWon(START_MONEY * Math.pow(2, n))}`, desc: '단계마다 시작 자금이 두 배가 됩니다.' },
+  { id: 'tech', name: '기술 이전', icon: 'research', base: 2, grow: 1.3, max: TECHS.length, to: (n) => TECHS[n - 1].name, fmt: (n) => `처음부터 ${TECHS[Math.min(n, TECHS.length) - 1].name}까지 연구 완료`, desc: '연구 목록의 앞에서부터 차례로 처음부터 쓸 수 있습니다.' },
+  { id: 'study', name: '연구 유산', icon: 'engine', base: 5, grow: 1.7, max: 5, to: (n) => `${n}단계`, fmt: (n) => `꾸준히 강해지는 연구 ${n}단계로 시작`, desc: '납품가, 속도, 적재, 상하차, 정시 연구가 이 단계에서 시작합니다.' },
+  { id: 'roads', name: '도로 유산', icon: 'bypass', base: 30, grow: 1, max: 1, to: () => '', fmt: () => '환생해도 교차로, 차로, 표지, 대교 유지', desc: '이번 회차에 깐 교통 시설과 도로가 다음 회차에도 그대로 남습니다.' },
+];
+
 // 교통 시설 설치비. 신호등·회전교차로·입체교차로·도로 확장은 실제 공사비 수준이다.
 export const TOOL_PRICE = {
   yield: 300 * MAN,

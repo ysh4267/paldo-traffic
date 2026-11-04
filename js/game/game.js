@@ -2,7 +2,7 @@
 import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES } from '../sim/network.js';
 import { Traffic, GAP } from '../sim/traffic.js';
 import {
-  GOODS, TIER_WEIGHT, BASE_RATE, EXPAND_COST, BAY_COST, START_MONEY, TRUCK_STEP, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE,
+  GOODS, TIER_WEIGHT, BASE_RATE, EXPAND_COST, BAY_COST, START_MONEY, TRUCK_STEP, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE, PERKS, FAME_BASE, FAME_REF,
   LANE_PRICE_PER_KM, LANE_PRICE_MIN, LAND_FACTOR, PROJECT_COST, FERRY_PRICE, TOW_PRICE, CITY_ACCEPTS, PORT_ACCEPTS, AIR_ACCEPTS, DOKDO_ACCEPTS, fmtWon,
 } from './defs.js';
 import { Lot, EXIT_PREFIX } from './lot.js';
@@ -101,6 +101,9 @@ export class Route {
 export class Game {
   constructor(data, opts = {}) {
     this.data = data;
+    // 환생해도 남는 것
+    const old = opts.legacy || {};
+    this.legacy = { fame: 0, total: 0, runs: 0, earned: 0, ...old, best: { ...old.best }, perks: { ...old.perks } };
     this.net = new Network(data);
     this.traffic = new Traffic(this.net, { arrive: (v) => this.onArrive(v), arriveSpeed: (v) => this.arriveSpeed(v) });
     this.regions = data.regions.map((r, i) => ({ ...r, index: i, unlocked: false, pts: 0 }));
@@ -200,6 +203,7 @@ export class Game {
     this.updateRoadAccess();
     this.updateSiteAvailability(silent);
     if (!silent) {
+      if (this.allUnlocked) this.flags.openAt = this.time;
       this.events.push({ type: 'region', region: this.regions[stage] });
     }
   }
@@ -249,7 +253,7 @@ export class Game {
   siteRate(s) {
     if (!s.produces) return 0;
     const base = (GOODS[s.goods].rate ?? BASE_RATE[s.tier]) * Math.pow(1.55, s.stage);
-    return base * Math.pow(1.38, s.level);
+    return base * Math.pow(1.38, s.level) * (1 + this.perk('rate') * 0.05);
   }
   siteCap(s) { return Math.max(24, this.siteRate(s) * 70); }
   inputCap(s) { return Math.max(30, this.siteRate(s) * 110); }
@@ -656,11 +660,16 @@ export class Game {
     return gap;
   }
 
+  // 연구와 명성 보너스를 합한 납품가 배율
+  payMult() { return (1 + this.upg.pay * 0.14) * (1 + this.perk('pay') * 0.1) * this.fameMult(); }
+  // 권역이 돈이 아니라 실적으로 열리니, 실적도 함께 올라야 회차가 빨라진다
+  ptsMult() { return (1 + this.perk('pts') * 0.1) * this.fameMult(); }
+
   payDelivery(s, v) {
     const g = GOODS[v.goods];
     const r = v.route;
     const tons = v.cargo;
-    let mult = 1 + this.upg.pay * 0.14;
+    let mult = this.payMult();
     if (s.kind === 'city') mult *= 1 + s.cityStage * 0.08;
     if (s.kind === 'dokdo') mult *= 6;
     mult *= this.boomMult();
@@ -693,7 +702,7 @@ export class Game {
     s.delivered += tons;
 
     const weight = g.weight ?? TIER_WEIGHT[g.tier];
-    const pts = tons * weight;
+    const pts = tons * weight * this.ptsMult();
     const reg = this.regions[s.region];
     reg.pts += pts;
     if (this.allUnlocked && this.progress() >= 1) this.endlessPts += pts;
@@ -826,21 +835,24 @@ export class Game {
     }
   }
 
+  // 명성 보너스를 뺀 첫 대 가격
+  modelPrice(modelIdx) { return TRUCKS[modelIdx].price * (1 - this.perk('truck') * 0.03); }
+
   truckPrice(route, modelIdx) {
-    return TRUCKS[modelIdx].price * (1 + TRUCK_STEP * route.trucks.length);
+    return this.modelPrice(modelIdx) * (1 + TRUCK_STEP * route.trucks.length);
   }
 
   // n대를 한꺼번에 살 때 값 (대수에 따라 값이 오른다)
   truckBatchPrice(route, modelIdx, n) {
     const c = route.trucks.length;
-    return TRUCKS[modelIdx].price * (n * (1 + TRUCK_STEP * c) + (TRUCK_STEP * n * (n - 1)) / 2);
+    return this.modelPrice(modelIdx) * (n * (1 + TRUCK_STEP * c) + (TRUCK_STEP * n * (n - 1)) / 2);
   }
   // 지금 돈으로 살 수 있는 최대 대수 (최소 1)
   truckAffordable(route, modelIdx, limit = 200) {
     let n = 0;
     let price = this.truckPrice(route, modelIdx);
     let money = this.money;
-    const step = TRUCKS[modelIdx].price * TRUCK_STEP;
+    const step = this.modelPrice(modelIdx) * TRUCK_STEP;
     while (n < limit && money >= price) { money -= price; price += step; n++; }
     return n;
   }
@@ -861,6 +873,7 @@ export class Game {
   addTruck(route, modelIdx, price = 0) {
     const m = TRUCKS[modelIdx];
     const v = this.traffic.newVehicle(m, route);
+    v.speedF = m.speed * (1 + this.upg.speed * 0.05);
     v.modelIdx = modelIdx;
     v.price = price;
     v.leg = 0;
@@ -901,7 +914,7 @@ export class Game {
   }
   // 지금 트럭을 팔고 같은 노선에 새로 샀을 때와 같은 값이다
   convertPrice(v, modelIdx) {
-    return Math.max(0, TRUCKS[modelIdx].price * (1 + TRUCK_STEP * (v.route.trucks.length - 1)) - (v.price || 0) * 0.5);
+    return Math.max(0, this.modelPrice(modelIdx) * (1 + TRUCK_STEP * (v.route.trucks.length - 1)) - (v.price || 0) * 0.5);
   }
   // n대까지 전환한다. 서 있는 트럭은 바로, 달리는 트럭은 다음 거점에 닿을 때 바뀐다
   convertTrucks(route, modelIdx, n = Infinity) {
@@ -912,7 +925,7 @@ export class Game {
       const price = this.convertPrice(v, modelIdx);
       if (this.money < price) break;
       this.money -= price;
-      v.price = TRUCKS[modelIdx].price * (1 + TRUCK_STEP * (route.trucks.length - 1));
+      v.price = this.modelPrice(modelIdx) * (1 + TRUCK_STEP * (route.trucks.length - 1));
       v.nextModel = modelIdx;
       if (v.lot ? v.lot.phase === 'park' : v.state === 'queue' || v.state === 'bay') this.applyConvert(v);
       out.n++;
@@ -992,7 +1005,7 @@ export class Game {
       const before = plan.n;
       for (const q of order) {
         // 한 번 못 산 노선은 값이 내려가지 않으니 다음 바퀴에도 못 산다
-        const price = TRUCKS[modelIdx].price * (1 + TRUCK_STEP * (q.trucks.length + round));
+        const price = this.modelPrice(modelIdx) * (1 + TRUCK_STEP * (q.trucks.length + round));
         if (price > left) continue;
         left -= price;
         plan.cost += price;
@@ -1033,12 +1046,13 @@ export class Game {
   get truckCount() { return this.traffic.vehicles.size; }
 
   // ── 도구 가격과 적용 ───────────────────────────────────
+  buildMult() { return 1 - this.perk('build') * 0.04; }
   landFactor(region) { return LAND_FACTOR[Math.min(region, LAND_FACTOR.length - 1)]; }
 
   // 몇 번째 차로든 값이 같다. 길이와 땅값으로만 달라진다
   lanePrice(road) {
     const per = LANE_PRICE_PER_KM[road.kind] || 0;
-    return Math.max(LANE_PRICE_MIN, per * road.len * this.landFactor(road.region));
+    return Math.max(LANE_PRICE_MIN, per * road.len * this.landFactor(road.region)) * this.buildMult();
   }
   canAddLane(road) { return road.kind !== 'f' && road.lanes < MAX_LANES[road.kind]; }
   addLane(road) {
@@ -1053,9 +1067,9 @@ export class Game {
   // 교차로 설치비는 어디에 몇 번을 놓아도 같다
   controlPrice(node, control) {
     if (control === 'auto') return 0;
-    return TOOL_PRICE[control] || 0;
+    return (TOOL_PRICE[control] || 0) * this.buildMult();
   }
-  ringPrice() { return TOOL_PRICE.ring2; }
+  ringPrice() { return TOOL_PRICE.ring2 * this.buildMult(); }
   toolAllowed(tool) {
     if (tool === 'signal') return this.techs.has('signal');
     if (tool === 'roundabout') return this.techs.has('roundabout');
@@ -1083,7 +1097,7 @@ export class Game {
   }
   signPrice(edge, sign) {
     if (sign === 0) return 0;
-    return sign === 1 ? TOOL_PRICE.yield : TOOL_PRICE.stop;
+    return (sign === 1 ? TOOL_PRICE.yield : TOOL_PRICE.stop) * this.buildMult();
   }
   setSign(edge, sign) {
     const node = this.net.nodes[edge.to];
@@ -1098,7 +1112,7 @@ export class Game {
 
   projectAvailable(p) { return !p.built && p.stage <= this.stage && p.roads.length > 0; }
   projectPrice(p) {
-    return PROJECT_COST[p.id].cost;
+    return PROJECT_COST[p.id].cost * this.buildMult();
   }
   buildProject(p) {
     if (!this.projectAvailable(p)) return false;
@@ -1118,7 +1132,7 @@ export class Game {
 
   // ── 뱃길 ──────────────────────────────────────────────
   ferryPrice(fy) {
-    return FERRY_PRICE * Math.pow(1.5, fy.level || 0);
+    return FERRY_PRICE * Math.pow(1.5, fy.level || 0) * this.buildMult();
   }
   buyFerry(fy) {
     const c = this.ferryPrice(fy);
@@ -1160,6 +1174,60 @@ export class Game {
   applySpeedTech() {
     const f = 1 + this.upg.speed * 0.05;
     for (const v of this.traffic.vehicles) v.speedF = v.model.speed * f;
+  }
+
+  // ── 환생 ──────────────────────────────────────────────
+  perk(id) { return this.legacy.perks[id] || 0; }
+  // 지금까지 모은 명성 1마다 납품 대금과 실적 +1%. 쓴 명성도 센다
+  fameMult() { return 1 + this.legacy.total * 0.01; }
+  perkCost(id) {
+    const p = PERKS.find((q) => q.id === id);
+    return Math.ceil(p.base * Math.pow(p.grow, this.perk(id)));
+  }
+  buyPerk(id) {
+    const p = PERKS.find((q) => q.id === id);
+    if (!p || this.perk(id) >= p.max) return false;
+    const c = this.perkCost(id);
+    if (this.legacy.fame < c) return false;
+    this.legacy.fame -= c;
+    this.legacy.perks[id] = this.perk(id) + 1;
+    return true;
+  }
+  // 모든 권역을 열면 환생할 수 있다. 더 벌어 둘수록 명성을 더 받는다
+  canRebirth() { return this.allUnlocked; }
+  fameRate() { return FAME_BASE * (1 + this.perk('fame') * 0.1); }
+  // 이번 회차에 번 돈으로 받을 명성
+  fameGain() { return Math.floor(this.fameRate() * Math.sqrt(this.totalEarned / FAME_REF)); }
+  // 명성 1을 더 받으려면 더 벌어야 할 돈
+  fameNext() {
+    const need = FAME_REF * Math.pow((this.fameGain() + 1) / this.fameRate(), 2);
+    return Math.max(0, need - this.totalEarned);
+  }
+  // 회차를 새로 시작하는 저장 자료. 명성 보너스만 반영하고 나머지는 처음 상태다
+  static freshSave(legacy, keep = {}) {
+    const lv = (id) => (legacy.perks && legacy.perks[id]) || 0;
+    const upg = {};
+    for (const u of UPGRADES) upg[u.id] = Math.min(u.max, lv('study'));
+    return {
+      v: SAVE_VERSION, t: Date.now(), money: START_MONEY * Math.pow(2, lv('seed')), time: 0, stage: 0, pts: [],
+      techs: TECHS.slice(0, lv('tech')).map((t) => t.id), upg,
+      flags: { first: true, reborn: legacy.runs },
+      ...keep, legacy,
+    };
+  }
+  // 환생한 다음 회차의 저장 자료. 도로 유산이 있으면 깔아 둔 시설이 남는다
+  rebirthSave() {
+    if (!this.canRebirth()) return null;
+    const L = this.legacy, gain = this.fameGain();
+    const best = { ...L.best, boom: Math.max(L.best.boom || 0, this.endless) };
+    if (this.flags.openAt && (!best.time || this.flags.openAt < best.time)) best.time = this.flags.openAt;
+    const legacy = { ...L, fame: L.fame + gain, total: L.total + gain, runs: L.runs + 1, earned: L.earned + this.totalEarned, best, perks: { ...L.perks } };
+    let keep = {};
+    if (this.perk('roads')) {
+      const s = this.serialize();
+      keep = { lanes: s.lanes, controls: s.controls, signs: s.signs, ferries: s.ferries, projects: s.projects };
+    }
+    return Game.freshSave(legacy, keep);
   }
 
   // ── 구난 ──────────────────────────────────────────────
@@ -1304,6 +1372,7 @@ export class Game {
       endless: this.endless,
       endlessPts: this.endlessPts,
       flags: this.flags,
+      legacy: this.legacy,
       towCount: this.towCount,
       lanes, controls, signs,
       ferries: this.traffic.ferries.filter((f) => f.level).map((f) => [f.road.id, f.level]),
@@ -1318,7 +1387,7 @@ export class Game {
   }
 
   static restore(data, save) {
-    const g = new Game(data);
+    const g = new Game(data, { legacy: save.legacy });
     const oldWon = (save.v || 1) < 2 ? 100 : 1;
     g.money = save.money * oldWon;
     g.time = save.time;
@@ -1404,9 +1473,10 @@ export class Game {
   // 자리 비운 시간만큼 수익 정산
   applyOffline(seconds) {
     const capped = Math.min(seconds, 8 * 3600);
-    const earned = this.income * capped * 0.5;
+    const share = 0.5 + this.perk('offline') * 0.1;
+    const earned = this.income * capped * share;
     this.money += earned;
     this.totalEarned += earned;
-    return { seconds: capped, earned };
+    return { seconds: capped, earned, share };
   }
 }
