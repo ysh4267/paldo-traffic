@@ -13,6 +13,7 @@ const V_FLOOR = 0.8;     // 아무리 급해도 이 속도까지만 줄인다 km
 const V_KEEP = 6;        // 이보다 빠르게 지날 수 있는 곳은 급커브로 치지 않는다
 const ROUND_MAX_R = 3.5; // 도로 꼭짓점을 둥글릴 때의 가장 큰 반경 km
 const TURN_R = 0.6;      // 트럭이 도는 가장 작은 반경 km. 교차로 곡선이 이보다 많이 급하면 크게 돌아 나온다
+const R_JUNCTION = 1.5;  // 세 갈래 이상 교차로의 가장 작은 반경 km. 더 좁으면 꺾는 트럭이 제자리를 한 바퀴 돌아 나온다
 
 const wrapAngle = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 
@@ -219,6 +220,7 @@ export class Road {
     this.ref = d.ref || '';
     this.region = d.r;
     this.lock = d.lock || null;
+    this.parent = d.parent ?? null; // 거점 입구를 내느라 갈라져 나온 도로라면 원래 도로 번호
     this.ferry = d.ferry || null;
     this.stage = d.stage ?? 0;
     this.lanes = BASE_LANES[d.k];
@@ -418,7 +420,7 @@ export class Network {
       const width = (r) => 2 * (MEDIAN + LANE_W * r.lanes);
       let maxW = 0;
       for (const r of rs) maxW = Math.max(maxW, width(r));
-      let R = Math.max(0.75, 0.35 + maxW * 0.72);
+      let R = Math.max(rs.length >= 3 ? R_JUNCTION : 0.75, 0.35 + maxW * 0.72);
       // 사잇각이 좁으면 벌어지는 지점까지 물러난다
       const dirs = rs.map((r) => {
         const d = r.dirAt(n.id);

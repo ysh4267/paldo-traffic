@@ -21,9 +21,10 @@ const LOT_HEADWAY = 0.08; // 앞차와 두는 시간 간격 s
 const LOT_PATIENCE = 8;  // 통로를 가로지르려고 이만큼 기다렸으면 비집고 들어간다 s
 const LOT_SQUEEZE = 2;   // 서로 막고 있던 트럭이 비켜 지나가는 동안 앞을 보지 않는 시간 s
 // 노선 정체
-const QUIET_SLOPE = 1.47; // 막히지 않은 편도 시간 = 자유 주행 시간 × 이 값 + QUIET_BASE. 빈 도로에서 잰 값
-const QUIET_BASE = 7;
-const QUIET_SHIP = 2.5;   // 배는 왔다 갔다 하니 타는 데까지 한 번 건너는 시간쯤 기다린다
+const QUIET_EXIT = 5;     // 평소 편도 시간에 더하는 주차장에서 나오는 시간. 빈 도로에서 잰 값
+const QUIET_SLOPE = 1.05; // 계산한 주행 시간에 곱하는 값. 빈 도로에서 잰 값
+const QUIET_SHIP = 1.3;   // 배는 왔다 갔다 하니 타기까지 조금 기다린다
+const QUIET_DS = 0.3;     // 평소 시간을 계산할 때 길을 나누는 간격 km
 const LEG_EMA = 0.3;      // 편도 시간 평균에 새 기록을 얼마나 섞는지
 const JAM_RATIO = 1.35;   // 평소보다 이만큼 더 걸리면 막히는 노선으로 친다. 빈 도로의 트럭도 1.3배까지는 흔들린다
 const JAM_SECONDS = 10;   // 짧은 노선은 몇 초만 늦어도 배수가 크니, 이만큼은 늦어야 막힌 것으로 친다
@@ -122,7 +123,7 @@ export class Game {
     const old = opts.legacy || {};
     this.legacy = { fame: 0, total: 0, runs: 0, earned: 0, ...old, best: { ...old.best }, perks: { ...old.perks } };
     this.net = new Network(data);
-    this.traffic = new Traffic(this.net, { arrive: (v) => this.onArrive(v), arriveSpeed: (v) => this.arriveSpeed(v) });
+    this.traffic = new Traffic(this.net, { arrive: (v) => this.onArrive(v), arriveSpeed: (v) => this.arriveSpeed(v), arriveV: LOT_V });
     this.regions = data.regions.map((r, i) => ({ ...r, index: i, unlocked: false, pts: 0 }));
     this.sites = data.sites.map((d, i) => new Site(d, i, this.net));
     this.siteById = new Map(this.sites.map((s) => [s.id, s]));
@@ -468,6 +469,9 @@ export class Game {
   onArrive(v) {
     const r = v.route;
     if (v.retire && !this.hasLoad(v)) { this.removeTruckFromSim(v); return true; }
+    // 진입로 차로가 여럿이어도 주차장 입구는 하나다. 나란히 들어가면 입구에서 서로를 앞차로 보고 멈춰 풀리지 않는다
+    const lot = (v.leg === 1 ? r.to : r.from).lot;
+    if (lot && lot.canTake() && lot.waiting < LOT_BUSY && lot.entrySpeed(v, LOT_V) <= 0) return false;
     if (v.leg === 1) {
       const s = r.to;
       if (s.inbound >= s.bays * 3 && v.v < 1) return false;
@@ -482,10 +486,68 @@ export class Game {
   }
 
   // ── 노선 정체 ─────────────────────────────────────────
-  // 막히지 않은 길을 달릴 때 걸리는 편도 시간. 빈 도로를 달린 트럭의 실제 시간에 맞췄다 (가속과 회전 포함)
+  // 막히지 않은 길을 달릴 때 걸리는 편도 시간. 경로의 제한 속도를 따라 가속과 감속까지 계산한다.
+  // 거리로만 어림하면 교차로가 잦은 노선이나 엔진 연구를 많이 한 트럭은 빈 길에서도 막힌 것처럼 보인다
   quietTime(r, leg, model) {
-    const free = leg === 1 ? r.freeTime : r.freeBack, ship = leg === 1 ? r.shipTo : r.shipBack;
-    return ((free - ship) / model.speed / (1 + this.upg.speed * 0.05)) * QUIET_SLOPE + QUIET_BASE + ship * QUIET_SHIP;
+    const path = leg === 1 ? r.pathTo : r.pathBack;
+    if (r.quietFor !== path || r.quietV !== this.net.version || r.quietS !== this.upg.speed) {
+      if (leg === 1 || !r.quietC) r.quietC = new Map();
+      r.quietFor = path;
+      r.quietV = this.net.version;
+      r.quietS = this.upg.speed;
+      r.quietC.clear();
+    }
+    const key = leg * 100 + TRUCKS.indexOf(model);
+    let t = r.quietC.get(key);
+    if (t === undefined) {
+      t = this.freeRun(path, model, leg === 1) * QUIET_SLOPE + QUIET_EXIT + (leg === 1 ? r.shipTo : r.shipBack) * QUIET_SHIP;
+      r.quietC.set(key, t);
+    }
+    return t;
+  }
+  // 트럭 한 대가 빈 경로를 달리는 시간. 배 타는 시간은 뺀다
+  freeRun(path, model, loaded) {
+    const tr = this.traffic, net = this.net;
+    const speedF = model.speed * (1 + this.upg.speed * 0.05);
+    const vm = [], dsv = [];
+    const add = (len, lim) => {
+      const n = Math.max(1, Math.ceil(len / QUIET_DS));
+      for (let i = 0; i < n; i++) { vm.push(lim); dsv.push(len / n); }
+    };
+    path.forEach((e, i) => {
+      if (e.road.kind === 'f') return;
+      const lim = e.speed * speedF;
+      let s = 0;
+      for (const c of e.cornerList()) {
+        if (c.s0 > s) add(c.s0 - s, lim);
+        add(Math.max(0.05, c.s1 - Math.max(s, c.s0)), Math.min(lim, c.v));
+        s = c.s1;
+      }
+      if (e.L > s) add(e.L - s, lim);
+      const next = path[i + 1];
+      if (!next || next.road.kind === 'f') return;
+      const turn = e.turns.get(next.id);
+      if (!turn) return;
+      const from = e.lanes[Math.min(turn.laneLo, e.lanes.length - 1)];
+      const to = next.lanes[Math.min(from.index, next.lanes.length - 1)];
+      const conn = net.getConn(from, to);
+      add(conn.len, Math.min(tr.turnSpeed(net.nodes[e.to], e, { speedF }, turn), conn.vMax));
+    });
+    if (!vm.length) return 0;
+    const acc = model.acc * (loaded ? 0.7 : 1), brk = model.brk * (loaded ? 0.88 : 1);
+    const v = new Array(vm.length);
+    let u = LOT_LEAVE_V;
+    for (let i = 0; i < vm.length; i++) {
+      const r = u >= vm[i] ? 1 : u / vm[i];
+      u = Math.min(vm[i], Math.sqrt(u * u + 2 * acc * (1 - r * r) * dsv[i]));
+      v[i] = u;
+    }
+    let w = LOT_V, t = 0;
+    for (let i = vm.length - 1; i >= 0; i--) {
+      w = Math.min(v[i], Math.sqrt(w * w + 2 * brk * dsv[i]));
+      t += dsv[i] / Math.max(w, 0.3);
+    }
+    return t;
   }
   // 거점에 닿은 트럭이 편도에 걸린 시간을 적어 둔다
   noteLeg(v) {
@@ -1423,7 +1485,7 @@ export class Game {
     let keep = {};
     if (this.perk('roads')) {
       const s = this.serialize();
-      keep = { lanes: s.lanes, controls: s.controls, signs: s.signs, ferries: s.ferries, projects: s.projects };
+      keep = { map: s.map, lanes: s.lanes, controls: s.controls, signs: s.signs, ferries: s.ferries, projects: s.projects };
     }
     return Game.freshSave(legacy, keep);
   }
@@ -1554,6 +1616,7 @@ export class Game {
     for (const e of this.net.edges) if (e.sign) signs.push([e.id, e.sign]);
     return {
       v: SAVE_VERSION,
+      map: this.data.meta.mapVersion || 1,
       t: Date.now(),
       money: this.money,
       time: this.time,
@@ -1608,6 +1671,10 @@ export class Game {
       if (p) { p.built = true; for (const r of p.roads) r.built = true; }
     }
     for (const [id, lanes] of save.lanes || []) if (g.net.roads[id]) g.net.setLanes(g.net.roads[id], lanes);
+    // 거점 입구를 내느라 갈라진 도로는 예전 저장에 없다. 넓혀 둔 차로는 원래 도로를 따른다
+    if ((save.map || 1) < (data.meta.mapVersion || 1)) {
+      for (const r of g.net.roads) if (r.parent !== null && g.net.roads[r.parent].lanes !== r.lanes) g.net.setLanes(r, g.net.roads[r.parent].lanes);
+    }
     for (const [id, control, ringLanes] of save.controls || []) {
       const n = g.net.nodes[id];
       if (!n) continue;

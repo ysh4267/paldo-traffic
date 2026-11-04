@@ -17,6 +17,7 @@ const CAP_MAX = 24;
 const NECK = 0.8;              // 진입로 끝에서 통로로 돌아 들어가는 곳까지
 const TAIL = 1.1;              // 마지막 칸 뒤로 남겨 두는 후진 여유
 const ANGLES = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5].map((q) => (q * Math.PI) / 8);
+const RESERVE = 2.2;           // 주차장을 놓지 않은 옆 거점 둘레로 비워 두는 거리
 const CLEAR = 0.42;            // 앞머리와 다른 트럭 몸통 사이에 두는 거리
 const CLEAR_PASS = 0.26;       // 맞은편 차로로 스쳐 지날 때의 거리
 const LOOK_STEP = 0.3;         // 앞길을 살피는 간격
@@ -112,7 +113,8 @@ function obstacles(game, site, x, y) {
   }
   for (const o of game.sites) {
     if (o === site) continue;
-    add(o.x, o.y, 0.6);
+    // 아직 주차장을 놓지 않은 거점도 입구 자리는 비워 둔다
+    add(o.x, o.y, o.lot ? 0.6 : RESERVE);
     const lot = o.lot;
     if (!lot || !lot.maxCap) continue;
     const end = LOT_U0 + (lot.maxCap / 2) * STALL_W + TAIL;
@@ -124,6 +126,24 @@ function obstacles(game, site, x, y) {
     }
   }
   return out;
+}
+
+// 진입로 끝의 위치와 방향에서 낼 수 있는 가장 많은 빈칸. 지도를 만들 때 거점 자리를 고르는 데 쓴다
+export function mostStalls(obs, sx, sy, lx, ly) {
+  const view = { sx, sy, lx, ly, x: 0, y: 0, tx: 0, ty: 0, nx: 0, ny: 0 };
+  let most = 0;
+  for (const a of ANGLES) {
+    const c = Math.cos(a), s = Math.sin(a), shift = neckShift(a);
+    view.x = sx + lx * shift;
+    view.y = sy + ly * shift;
+    view.tx = lx * c - ly * s;
+    view.ty = lx * s + ly * c;
+    view.nx = -view.ty;
+    view.ny = view.tx;
+    const f = Lot.prototype.fit.call(view, obs, shift);
+    if (f.free > most) most = f.free;
+  }
+  return most;
 }
 
 export class Lot {

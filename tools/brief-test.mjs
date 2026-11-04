@@ -49,8 +49,8 @@ const open = (g) => [...g.routes.values()].filter((r) => r.valid && r.from.avail
   if (r) {
     ok('뱃길 시간을 잰다', r.shipTo > 0 && r.shipBack > 0, `${r.shipTo.toFixed(0)}초`);
     const slow = g.quietTime(r, 1, TRUCKS[2]), quick = g.quietTime(r, 1, TRUCKS[3]);
-    const land = (r.freeTime - r.shipTo) * (1 / TRUCKS[2].speed - 1 / TRUCKS[3].speed) * 1.47;
-    ok('배 타는 시간은 트럭 속도와 상관없다', Math.abs(slow - quick - land) < 0.01);
+    const land = g.freeRun(r.pathTo, TRUCKS[2], true) - g.freeRun(r.pathTo, TRUCKS[3], true);
+    ok('배 타는 시간은 트럭 속도와 상관없다', slow > quick && Math.abs(slow - quick - land * 1.05) < 0.01);
     g.buyTruck(r, 0);
     run(g, 600);
     const j = g.routeJam(r);

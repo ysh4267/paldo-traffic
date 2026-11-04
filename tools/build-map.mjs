@@ -1,6 +1,7 @@
 // 지도 데이터 전체 빌드: .cache/raw/* → data/korea.json
 // 사용법: node tools/build-map.mjs
 import fs from 'node:fs';
+import { spaceSites } from './lib/space-sites.mjs';
 import path from 'node:path';
 import { project, dist, polyLength, simplify, simplifyRing, chaikin, chaikinRing, gaussianSmooth, ringArea, pointInRing, nearestOnPolyline, clipRingToBox, flat, round1, round2, unproject } from './lib/geo.mjs';
 import { Grid, extractGraph, RoadGraph } from './lib/skeleton.mjs';
@@ -949,6 +950,9 @@ const out = {
   labels: placeLabels, seas: seaLabels,
   dokdo: { x: round2(dx), y: round2(dy) }, ulleung: { x: round2(ux), y: round2(uy) },
 };
+
+// 거점을 교차로에서 떼어 놓는다
+spaceSites(out, log);
 
 fs.mkdirSync('data', { recursive: true });
 const json = JSON.stringify(out);

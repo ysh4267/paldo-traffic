@@ -1571,7 +1571,7 @@ export class UI {
     return h('div', {
       class: `route${!q.opened && routes.some((x) => x.opened) ? ' new' : ''}`, key: q.id,
       onmouseenter: () => this.updateHighlights(q), onmouseleave: () => this.updateHighlights(),
-      'data-tip': `${Math.round(q.dist)}km · 막힘 없으면 ${Math.round(q.freeTime)}초\n1회 ${fmtWon(trip)} · 분당 ${fmtWon(q.rate * 60)}`,
+      'data-tip': `${Math.round(q.dist)}km · 막힘 없으면 ${Math.round(g.quietTime(q, 1, TRUCKS[m]))}초\n1회 ${fmtWon(trip)} · 분당 ${fmtWon(q.rate * 60)}`,
     },
     h('div', { class: 'route-t', key: 't' }, h('span', { class: 'name' }, q.to.name), h('small', null, running ? `${fmtWon(q.rate * 60)}/분` : `1회 ${fmtWon(trip)}`)),
     h('div', { class: 'route-act', key: 'act' },

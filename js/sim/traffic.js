@@ -405,11 +405,11 @@ export class Traffic {
     turn.flow++;
   }
 
-  connSpeed(node, f, turn) {
-    const base = Math.min(f.lane.edge.speed, turn.to.speed) * f.speedF;
+  connSpeed(node, f, turn) { return this.turnSpeed(node, f.lane.edge, f, turn); }
+  turnSpeed(node, e, f, turn) {
+    const base = Math.min(e.speed, turn.to.speed) * f.speedF;
     if (node.control === 'interchange') return base * (turn.kind === 'S' ? 1 : 0.72);
     if (node.control === 'signal') return base * (turn.kind === 'S' ? V_STRAIGHT : V_TURN);
-    const e = f.lane.edge;
     const anySign = node.inE.some((x) => x.sign > 0);
     const isMajor = anySign ? e.sign === 0 : node.major.size ? node.major.has(e.id) : false;
     if (!isMajor) return V0 * V_AUTO * f.speedF;
@@ -579,6 +579,18 @@ export class Traffic {
     return v1 * v1 + 2 * brk * Math.max(d1 - vt, 0) < v0 * v0 + 2 * brk * Math.max(d0 - vt, 0);
   }
 
+  // 이 차로 다음에 만나는 교차로를 지날 수 있는 속도. 거점으로 들어가면 주차장에 들어서는 속도다
+  nextTurnV(c, lane) {
+    const e = lane.edge, next = c.path[c.pi + 2];
+    if (!next) return this.hooks.arriveV ?? Infinity;
+    const turn = e.turns.get(next.id);
+    if (!turn || next.road.kind === 'f') return Infinity;
+    const node = this.net.nodes[e.to];
+    const base = this.turnSpeed(node, e, c, turn);
+    const to = next.lanes[Math.min(lane.index, next.lanes.length - 1)];
+    return Math.min(base, this.net.getConn(lane, to).vMax);
+  }
+
   stepConn(conn, dt) {
     const vs = conn.veh;
     const tl = conn.toLane;
@@ -608,7 +620,9 @@ export class Traffic {
           else if (g3 < gap) { gap = g3; leadV = ml.v; }
         } else c.mergeLead = null;
       }
-      const ds = this.drive(c, c.connV, gap, leadV, HEADWAY, dt) * dt;
+      // 다음 교차로가 금방 나오면 연결로에서부터 속도를 줄인다. 짧은 구간에서 뒤늦게 급브레이크를 밟으면 뒤차까지 멈칫한다
+      if (c.planFor !== conn) { c.planFor = conn; c.planV = this.nextTurnV(c, tl); }
+      const ds = this.drive(c, c.connV, gap, leadV, HEADWAY, dt, c.planV, conn.len - c.s + tl.edge.L) * dt;
       c.s += ds;
       c.odo += ds;
       if (c.ringList && c.s > conn.ringS1 + c.len * 0.5) this.leaveRing(c);
