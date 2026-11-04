@@ -170,8 +170,8 @@ class App {
     const card = ui && (ui.sel || panel);
     // 좁은 화면에서 목록은 더 크게 열리고, 지도에서 고를 때만 지도를 넓게 내준다
     const share = panel && !ui.sel && ui.tool !== 'fleet' ? 0.6 : 0.46;
-    if (narrow) cam.pad = { l: 8, r: 8, t: 84, b: card ? Math.round(window.innerHeight * share) + 56 : 92 };
-    else cam.pad = { l: 16, r: ui && ui.sideShown() ? 648 : card ? 336 : 16, t: 60, b: 70 };
+    if (narrow) cam.pad = { l: 8, r: 8, t: 92, b: card ? Math.round(window.innerHeight * share) + 56 : 104 };
+    else cam.pad = { l: 16, r: ui && ui.sideShown() ? 656 : card ? 344 : 16, t: 60, b: 62 };
   }
 
   regionBox(maxIndex) {
@@ -312,7 +312,8 @@ class App {
     c.addEventListener('pointerleave', () => { this.renderer.hover = null; });
 
     // 패널에서 누르는 동안 갱신을 멈춰 클릭을 보호한다
-    for (const id of ['inspector', 'sidecard']) document.getElementById(id).addEventListener('pointerdown', () => { this.ui.pressing = true; });
+    // 고르기 칸은 펼친 목록에서 손을 떼므로 이 창에 pointerup이 오지 않을 수 있어 뺀다
+    for (const id of ['inspector', 'sidecard']) document.getElementById(id).addEventListener('pointerdown', (e) => { if (e.target.tagName !== 'SELECT') this.ui.pressing = true; });
     window.addEventListener('pointerup', () => { this.ui.pressing = false; this.sound.unlock(); });
     window.addEventListener('keydown', () => this.sound.unlock());
     document.getElementById('ui').addEventListener('pointerdown', () => this.sound.unlock());
@@ -436,7 +437,7 @@ class App {
       } else if (e.type === 'city') {
         r.ping(e.site.x, e.site.y);
         r.baseDirty = true;
-        if (e.stage >= 2) ui.toast('city', `${josa(e.site.name, '이', '가')} 성장했습니다`, `납품가 +${e.stage * 8}%`, () => ui.goSite(e.site));
+        if (e.stage >= 3) ui.toast('city', `${josa(e.site.name, '이', '가')} 성장했습니다`, `납품가 +${e.stage * 8}%`, () => ui.goSite(e.site));
       } else if (e.type === 'tech') {
         ui.toast(e.tech.icon, `${e.tech.name} 연구 완료`);
         ui.renderDock();

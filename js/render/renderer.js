@@ -1239,9 +1239,9 @@ export class Renderer {
       if (n.terminal || !this.nodeInView(n, -this.margin + 30)) continue;
       if (!this.nodeOpen(n)) continue;
       // 정체: 어두운 고리가 생기고, 오래 막힐수록 붉은 호가 찬다
-      if (n.waiting >= 6) {
-        const R = Math.max(n.R, 6 * k) + (6 + Math.min(12, n.waiting * 0.3)) * k;
-        const w = 5 * k;
+      if (n.waiting >= 8) {
+        const R = Math.max(n.R, 6 * k) + (6 + Math.min(10, n.waiting * 0.25)) * k;
+        const w = 3.5 * k;
         ctx.lineCap = 'butt';
         ctx.strokeStyle = pal.crowd;
         ctx.lineWidth = w;
@@ -1533,8 +1533,10 @@ export class Renderer {
     const game = this.game, pal = this.pal, k = this.cam.k;
     const shape = siteShape(s);
     const frac = s.produces ? s.stock / game.siteCap(s) : 0;
+    // 트럭을 아직 안 보낸 거점은 쌓인 화물로 지도를 어지럽히지 않는다
+    const busy = s.produces && s.routesOut.some((q) => q.trucks.length);
     // 창고가 차면 어두운 부채꼴이 자라난다
-    if (frac > 0.75 && r >= 4) {
+    if (busy && frac > 0.75 && r >= 4) {
       const f = Math.min(1, (frac - 0.75) / 0.24);
       const R = r * 2.1 + 3;
       ctx.fillStyle = pal.crowd;
@@ -1582,7 +1584,7 @@ export class Renderer {
     }
     if (k > KM_MID) return;
     // 쌓인 화물
-    if (s.produces && frac > 0.02) {
+    if (busy && frac > 0.02) {
       const p = Math.max(2.6, r * 0.42), gap = p * 0.42;
       const n = Math.min(12, Math.ceil(frac * 12));
       const x0 = x + r * 1.25 + 3;
@@ -1610,7 +1612,7 @@ export class Renderer {
       }
     }
     // 모자란 원료는 빈 동그라미로 알려 준다
-    if (s.inputs) {
+    if (busy && s.inputs) {
       const cap = game.inputCap(s);
       let i = 0;
       for (let q = 0; q < s.inputs.length; q++) {

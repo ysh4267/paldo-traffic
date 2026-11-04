@@ -14,20 +14,27 @@
 <body>
 <canvas id="map" aria-label="대한민국 지도와 트럭이 움직이는 게임 화면"></canvas>
 <div id="ui">
-  <header id="topbar"></header>
-  <div id="goal"></div>
-  <div id="todo"></div>
-  <nav id="dock" aria-label="도구"></nav>
-  <div id="menu"></div>
+  <div id="hud">
+    <div id="status">
+      <header id="topbar"></header>
+      <div id="goal"></div>
+      <div id="statsbox"></div>
+      <div id="todo"></div>
+    </div>
+    <div id="toasts"></div>
+  </div>
+  <div id="bottombar">
+    <div id="menu"></div>
+    <nav id="dock" aria-label="도구"></nav>
+    <div id="zoomctl"><button id="z-out" aria-label="축소" data-tip="축소"></button><button id="z-all" aria-label="전체 보기" data-tip="개발 중인 지역 전체 보기"></button><button id="z-in" aria-label="확대" data-tip="확대"></button></div>
+  </div>
   <aside id="inspector" aria-label="정보 카드" hidden></aside>
   <aside id="sidecard" aria-label="자세히 보기" hidden></aside>
   <div id="mini"><canvas id="minimap" width="150" height="172" aria-label="전국 미니맵"></canvas></div>
-  <div id="zoomctl"><button id="z-out" aria-label="축소" data-tip="축소"></button><button id="z-all" aria-label="전체 보기" data-tip="개발 중인 지역 전체 보기"></button><button id="z-in" aria-label="확대" data-tip="확대"></button></div>
   <a id="osm" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
   <div id="toolhint"></div>
   <div id="areabar"></div>
   <div id="tooltip"></div>
-  <div id="toasts"></div>
   <div id="coach"></div>
   <div id="banner"></div>
   <div id="modal"></div>

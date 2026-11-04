@@ -43,6 +43,8 @@ function update(el, v) {
   }
   el.__p = next;
   if (next.html === undefined) patch(el, v.kids);
+  // select는 option이 생긴 뒤에야 값을 고를 수 있다
+  if (v.tag === 'select' && next.value !== undefined && el.value !== String(next.value)) el.value = next.value;
 }
 
 function same(el, v) {
