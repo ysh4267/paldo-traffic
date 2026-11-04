@@ -1,7 +1,7 @@
 // 교차로 방식별 처리량 비교. 각 방향에서 포화 수요를 넣고 분당 통과 대수를 잰다.
 import fs from 'node:fs';
 import { Network } from '../js/sim/network.js';
-import { Traffic } from '../js/sim/traffic.js';
+import { Traffic, GAP } from '../js/sim/traffic.js';
 import { TRUCKS } from '../js/game/defs.js';
 
 const data = JSON.parse(fs.readFileSync('data/korea.json', 'utf8'));
@@ -31,6 +31,8 @@ function run(control, { degree = 4, lanes = 1, smart = false, seconds = 150, sig
     if (!list || !list.length) return;
     const straight = list.find((t) => t.kind === 'S');
     const t = straight && rnd() < straightShare ? straight : list[Math.floor(rnd() * list.length)];
+    // 달리는 속도로 넣으니 앞차와 몸길이만큼은 떨어져야 한다. 아니면 넣자마자 급브레이크를 밟아 뒤가 막힌다
+    if (!traffic.bestLane(e, t.to, model.len + GAP)) return;
     const v = traffic.newVehicle(model, route);
     v.path = [e, t.to];
     if (!traffic.inject(v, e, 0)) traffic.vehicles.delete(v); else v.v = e.speed * 0.9;

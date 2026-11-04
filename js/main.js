@@ -444,6 +444,7 @@ class App {
       } else if (e.type === 'project') {
         r.baseDirty = true;
         ui.showBanner('도로 개통', e.project.name, e.project.desc);
+        ui.showOpened(e.project);
         ui.toast(e.project.kind === 'bridge' ? 'bridge' : 'bypass', `${e.project.name} 개통`, '트럭이 새 길을 이용합니다');
       } else if (e.type === 'first') {
         ui.toast('won', '첫 납품 대금을 받았습니다', '돈이 모이면 트럭을 더 사세요');

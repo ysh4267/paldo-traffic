@@ -97,12 +97,14 @@ export class Lane {
     return (t ? Math.min(t.s - t.len, this.edge.L) : this.edge.L) - this.pending;
   }
   // 허가받은 차가 닿을 즈음의 빈 공간. 달리는 맨 뒤 차는 그때쯤 더 가 있다.
-  // 앞이 막혀 있으면 그만큼 못 가므로, 줄이 있는 차로에 잘못 들어가 교차로를 막는 일은 없다
+  // 앞이 막혀 있으면 그만큼 못 가므로, 줄이 있는 차로에 잘못 들어가 교차로를 막는 일은 없다.
+  // 혼자 있는 차는 정지선 앞에서 설 수도 있어 조심한다. 다만 앞길을 허가받았거나 거점으로 굴러 들어가는 차는 서지 않는다.
+  // 이걸 안 보면 트럭 한 대 길이밖에 안 되는 짧은 구간에는 한 번에 한 대만 들어간다
   freeSoon() {
     const vs = this.veh, n = vs.length;
     if (!n) return this.edge.L - this.pending;
     const t = vs[n - 1];
-    const room = n > 1 ? vs[n - 2].s - vs[n - 2].len - t.s - 0.32 : this.edge.L - t.s - 3;
+    const room = n > 1 ? vs[n - 2].s - vs[n - 2].len - t.s - 0.32 : t.granted || t.rolling ? Infinity : this.edge.L - t.s - 3;
     return Math.min(t.s - t.len + Math.min(t.v * 0.7, Math.max(0, room)), this.edge.L) - this.pending;
   }
 }

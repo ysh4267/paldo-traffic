@@ -37,6 +37,7 @@ export class Vehicle {
     this.path = null;
     this.pi = 0;
     this.granted = false;
+    this.rolling = false; // 차로 끝에서 서지 않고 거점으로 굴러 들어가는 중
     this.nextConn = null;
     this.targetLane = null;
     this.connV = V0;
@@ -144,10 +145,11 @@ export class Traffic {
     return best;
   }
 
-  // 지선 시작점 등 s=0에 차를 올린다. 공간이 없으면 false
+  // 지선 시작점 등 s=0에 차를 올린다. 공간이 없으면 false.
+  // 몸통은 아직 주차장 쪽에 있으니 앞차 꽁무니와 간격만 있으면 나선다. 교차로와 달리 막을 것이 없다
   inject(v, edge, pi = 0) {
     const after = v.path[pi + 1] || null;
-    const lane = this.bestLane(edge, after, v.len + GAP);
+    const lane = this.bestLane(edge, after, GAP);
     if (!lane) return false;
     v.pi = pi;
     v.lane = lane;
@@ -157,6 +159,7 @@ export class Traffic {
     v.a = 0;
     v.ci = 0;
     v.granted = false;
+    v.rolling = false;
     v.state = 'road';
     v.seg.seg = 0;
     v.clearTrail();
@@ -294,6 +297,9 @@ export class Traffic {
       if (!turn) continue;
       const after = f.path[f.pi + 2] || null;
       const need = f.len + GAP;
+      // 입체교차로와 갈림 없는 길목은 흐름이 서로 엇갈리지 않아, 연결로에 서서 기다려도 다른 트럭을 막지 않는다.
+      // 그래서 연결로 길이까지 자리로 친다. IC 사이의 짧은 구간도 입체로 올리면 트럭이 이어서 지나간다
+      const ramp = control === 'interchange' || node.inE.length <= 2;
 
       // 신호 확인
       let signalOk = true;
@@ -317,7 +323,7 @@ export class Traffic {
       let anySpace = false, bestFree = -Infinity;
       for (let k = hi; k >= lo; k--) {
         const tl = next.lanes[k];
-        const fr = tl.freeSoon();
+        const fr = tl.freeSoon() + (ramp ? this.net.getConn(f.lane, tl).len : 0);
         if (fr < need && (tl.veh.length || tl.pending > 0)) continue;
         anySpace = true;
         if (this.hasConflict(node, f, turn, tl, control)) { conflicted = true; continue; }
@@ -622,6 +628,7 @@ export class Traffic {
       c.seg.seg = 0;
       c.ci = 0;
       c.granted = false;
+      c.rolling = false;
       c.nextConn = null;
       c.targetLane = null;
       c.mergeLead = null;
@@ -669,6 +676,7 @@ export class Traffic {
         } else {
           // 거점으로 들어가는 트럭은 자리가 있으면 서지 않고 굴러 들어간다
           const vIn = c.pi >= c.path.length - 1 && this.hooks.arriveSpeed ? this.hooks.arriveSpeed(c) : 0;
+          c.rolling = vIn > 0;
           if (vIn > 0) {
             gap = Infinity;
             leadV = 0;

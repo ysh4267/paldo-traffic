@@ -30,6 +30,8 @@ const JAM_SECONDS = 10;   // 짧은 노선은 몇 초만 늦어도 배수가 크
 const SPOT_JAM = 0.3;     // 느린 혼잡도가 이만큼이면 막히는 곳
 const SPOT_HELD = 1.5;    // 서 있는 트럭이 평균 이만큼이면 막히는 곳
 const SPOT_MAX = 4;       // 노선 하나에 보여 줄 교차로와 도로 수
+const QUEUE_MAX = 40;     // 줄을 거슬러 찾을 때 볼 구간 수
+const CONVERT_FEE = 0.25; // 트럭을 바꿀 때 새 트럭값 가운데 꼭 내는 몫
 
 export class Site {
   constructor(def, index, net) {
@@ -411,6 +413,7 @@ export class Game {
 
   finishUnload(s, v) {
     this.payDelivery(s, v);
+    if (v.retire) { this.removeTruck(v); return; }
     const r = v.route;
     v.leg = 0;
     v.cargo = 0;
@@ -447,10 +450,13 @@ export class Game {
     return p;
   }
 
+  // 빼기로 한 트럭도 싣고 있던 짐은 내려놓고 사라진다
+  hasLoad(v) { return v.leg === 1 && v.cargo > 0; }
+
   // 거점에 닿는 트럭이 서지 않고 들어갈 수 있는 속도. 0이면 차로 끝에 선다
   arriveSpeed(v) {
     const r = v.route;
-    if (v.retire) return 0;
+    if (v.retire && !this.hasLoad(v)) return 0;
     const s = v.leg === 1 ? r.to : r.from;
     if (v.leg === 1 && s.inbound >= s.bays * 3) return 0;
     const lot = this.lotOf(s);
@@ -461,7 +467,7 @@ export class Game {
   // 트럭이 경로 끝(거점)에 도착
   onArrive(v) {
     const r = v.route;
-    if (v.retire) { this.removeTruckFromSim(v); return true; }
+    if (v.retire && !this.hasLoad(v)) { this.removeTruckFromSim(v); return true; }
     if (v.leg === 1) {
       const s = r.to;
       if (s.inbound >= s.bays * 3 && v.v < 1) return false;
@@ -530,9 +536,40 @@ export class Game {
     this.routeJams = list;
   }
   // 노선이 지나는 길에서 막히는 교차로와 도로. 정체는 뒤로 번지니 줄의 맨 앞이 진짜 원인이다
+  // 꽤 오래 막혀 있는 구간인가
+  stuckEdge(e) { return !!e && e.road.kind !== 'f' && (e.jam >= SPOT_JAM || e.held >= SPOT_HELD); }
+  // 경로에서 줄이 이어진 구간들. 가는 길과 돌아오는 길을 따로 본다
+  routeStretches(r) {
+    const out = [];
+    for (const leg of [1, 0]) {
+      const path = this.pathFor(r, leg);
+      if (!path) continue;
+      let cur = null;
+      for (const e of path) {
+        if (!this.stuckEdge(e)) { cur = null; continue; }
+        if (!cur) { cur = { leg, edges: [] }; out.push(cur); }
+        cur.edges.push(e);
+      }
+    }
+    return out;
+  }
+  // 이 교차로로 이어진 줄을 거슬러 올라가 모은다
+  queueBehind(node) {
+    const out = [], seen = new Set(), stack = [node];
+    while (stack.length && out.length < QUEUE_MAX) {
+      const n = stack.pop();
+      for (const e of n.inE) {
+        if (seen.has(e) || !this.stuckEdge(e)) continue;
+        seen.add(e);
+        out.push(e);
+        stack.push(this.net.nodes[e.from]);
+      }
+    }
+    return out;
+  }
   routeSpots(r) {
     const nodes = new Map(), roads = new Map(), net = this.net;
-    const stuck = (e) => !!e && (e.jam >= SPOT_JAM || e.held >= SPOT_HELD);
+    const stuck = (e) => this.stuckEdge(e);
     const add = (map, key, leg, make, held, jam, head) => {
       let q = map.get(key);
       if (!q) { q = make(); q.held = 0; q.jam = 0; q.head = false; q.legs = [false, false]; map.set(key, q); }
@@ -777,7 +814,7 @@ export class Game {
       const g = remain + t.s - t.len - GAP;
       if (g < gap && g < remain) { gap = g; this.lotExitV = t.v; }
     }
-    if (!this.traffic.bestLane(first, v.path[1] || null, v.len + GAP)) {
+    if (!this.traffic.bestLane(first, v.path[1] || null, GAP)) {
       if (remain - 0.02 < gap) { gap = Math.max(0, remain - 0.02); this.lotExitV = 0; }
     }
     return gap;
@@ -1017,20 +1054,24 @@ export class Game {
     if (!route.trucks.length) return false;
     // 대기장에 있는 트럭부터
     const s = route.from;
-    let v = s.yard.slice().reverse().find((q) => q.route === route);
-    if (v) {
-      s.yard.splice(s.yard.indexOf(v), 1);
-      this.money += (v.price || 0) * 0.5;
-      this.removeTruck(v);
-      return true;
-    }
-    v = route.trucks.slice().reverse().find((q) => !q.retire);
+    const v = s.yard.slice().reverse().find((q) => q.route === route) || route.trucks.slice().reverse().find((q) => !q.retire);
     if (!v) return false;
-    v.retire = true;
     this.money += (v.price || 0) * 0.5;
-    route.trucks.splice(route.trucks.indexOf(v), 1);
-    if (!route.trucks.length) this.routeVer++;
+    this.retireTruck(v);
     return true;
+  }
+  // 트럭을 노선에서 뺀다. 세워 둔 트럭은 바로 사라지고, 달리는 트럭은 다음 거점에 닿을 때 사라진다
+  retireTruck(v) {
+    const r = v.route, yard = r.from.yard;
+    const i = yard.indexOf(v);
+    if (i >= 0) {
+      yard.splice(i, 1);
+      this.removeTruck(v);
+      return;
+    }
+    v.retire = true;
+    r.trucks.splice(r.trucks.indexOf(v), 1);
+    if (!r.trucks.length) this.routeVer++;
   }
 
   // ── 트럭 전환 ─────────────────────────────────────
@@ -1040,25 +1081,54 @@ export class Game {
     const cap = TRUCKS[modelIdx].cap;
     return route.trucks.filter((v) => !v.retire && capOf(v) < cap).sort((a, b) => capOf(a) - capOf(b));
   }
-  // 지금 트럭을 팔고 같은 노선에 새로 샀을 때와 같은 값이다
-  convertPrice(v, modelIdx) {
-    return Math.max(0, this.modelPrice(modelIdx) * (1 + TRUCK_STEP * (v.route.trucks.length - 1)) - (v.price || 0) * 0.5);
+  // 전환 계획: 나르는 양은 그대로 두고 대수를 줄인다. 1톤 5대가 5톤 1대가 된다.
+  // maxNew는 새로 생길 트럭 수의 상한이다. 값은 새 트럭값에서 빠지는 트럭값의 절반을 뺀 만큼이고, 새 트럭값의 일부는 꼭 낸다
+  convertPlan(route, modelIdx, maxNew = Infinity) {
+    const cap = TRUCKS[modelIdx].cap;
+    const olds = [];
+    let tons = 0, refund = 0;
+    if (maxNew >= 1) {
+      for (const v of this.convertibleTrucks(route, modelIdx)) {
+        const c = TRUCKS[v.nextModel ?? v.modelIdx].cap;
+        if (olds.length && Math.ceil((tons + c) / cap) > maxNew) break;
+        olds.push(v);
+        tons += c;
+        refund += (v.price || 0) * 0.5;
+      }
+    }
+    const keep = Math.ceil(tons / cap);
+    const price = this.modelPrice(modelIdx) * (1 + TRUCK_STEP * Math.max(0, route.trucks.length - olds.length + keep - 1));
+    return { olds, keep, price, cost: Math.max(keep * price * CONVERT_FEE, keep * price - refund) };
   }
-  // n대까지 전환한다. 서 있는 트럭은 바로, 달리는 트럭은 다음 거점에 닿을 때 바뀐다
-  convertTrucks(route, modelIdx, n = Infinity) {
-    const out = { n: 0, paid: 0 };
+  // 돈이 모자라면 닿는 만큼만 바꾼다
+  convertWithin(route, modelIdx, money, maxNew = Infinity) {
+    let plan = this.convertPlan(route, modelIdx, maxNew);
+    while (plan.keep && plan.cost > money) plan = this.convertPlan(route, modelIdx, plan.keep - 1);
+    return plan;
+  }
+  // 트럭을 바꾼다. 세워 둔 트럭, 빈 트럭, 짐 실은 트럭 순으로 빼고 남은 트럭이 새 차종이 된다.
+  // 서 있는 트럭은 바로, 달리는 트럭은 다음 거점에 닿을 때 바뀌거나 사라진다
+  convertTrucks(route, modelIdx, maxNew = Infinity) {
+    const out = { n: 0, k: 0, paid: 0 };
     if (!route.valid || !this.modelUnlocked(modelIdx)) return out;
-    for (const v of this.convertibleTrucks(route, modelIdx)) {
-      if (out.n >= n) break;
-      const price = this.convertPrice(v, modelIdx);
-      if (this.money < price) break;
-      this.money -= price;
-      v.price = this.modelPrice(modelIdx) * (1 + TRUCK_STEP * (route.trucks.length - 1));
+    const plan = this.convertWithin(route, modelIdx, this.money, maxNew);
+    if (!plan.keep) return out;
+    this.money -= plan.cost;
+    const rank = (v) => (route.from.yard.includes(v) ? 0 : this.hasLoad(v) ? 2 : 1);
+    const order = plan.olds.slice().sort((a, b) => rank(a) - rank(b));
+    const drop = order.length - plan.keep;
+    order.forEach((v, i) => {
+      if (i < drop) {
+        this.retireTruck(v);
+        return;
+      }
+      v.price = plan.price;
       v.nextModel = modelIdx;
       if (v.lot ? v.lot.phase === 'park' : v.state === 'queue' || v.state === 'bay') this.applyConvert(v);
-      out.n++;
-      out.paid += price;
-    }
+    });
+    out.n = order.length;
+    out.k = plan.keep;
+    out.paid = plan.cost;
     return out;
   }
   applyConvert(v) {
@@ -1083,27 +1153,27 @@ export class Game {
     }
     return plan;
   }
-  // 여러 노선을 바꿀 때의 계획. convertTrucks처럼 노선 안에서는 돈이 모자란 트럭에서 멈춘다
+  // 여러 노선을 바꿀 때의 계획. n은 빠지는 트럭, k는 새로 생기는 트럭. all과 allK는 돈이 넉넉할 때의 수다
   planConvert(routes, modelIdx) {
-    const plan = { n: 0, all: 0, cost: 0, full: 0, some: new Set(), every: new Set() };
+    const plan = { n: 0, k: 0, all: 0, allK: 0, cost: 0, full: 0, some: new Set(), every: new Set() };
     if (!this.modelUnlocked(modelIdx)) return plan;
+    const from = (v) => TRUCKS[v.nextModel ?? v.modelIdx];
     let left = this.money;
     for (const q of routes) {
       if (!q.valid) continue;
-      let ok = true;
-      for (const v of this.convertibleTrucks(q, modelIdx)) {
-        const c = this.convertPrice(v, modelIdx);
-        const from = TRUCKS[v.nextModel ?? v.modelIdx];
-        plan.all++;
-        plan.full += c;
-        plan.every.add(from);
-        ok = ok && c <= left;
-        if (!ok) continue;
-        left -= c;
-        plan.cost += c;
-        plan.n++;
-        plan.some.add(from);
-      }
+      const whole = this.convertPlan(q, modelIdx);
+      if (!whole.keep) continue;
+      plan.all += whole.olds.length;
+      plan.allK += whole.keep;
+      plan.full += whole.cost;
+      for (const v of whole.olds) plan.every.add(from(v));
+      const got = this.convertWithin(q, modelIdx, left);
+      if (!got.keep) continue;
+      left -= got.cost;
+      plan.cost += got.cost;
+      plan.n += got.olds.length;
+      plan.k += got.keep;
+      for (const v of got.olds) plan.some.add(from(v));
     }
     return plan;
   }

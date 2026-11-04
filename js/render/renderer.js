@@ -197,6 +197,8 @@ export class Renderer {
     this.hover = null;
     this.highlightRoutes = null;
     this.spotMarks = null;  // 브리핑에서 연 노선의 막히는 곳
+    this.jamGlow = null;    // 고른 정체 구간 { edges, focus }. 고르는 동안 빛난다
+    this.roadFlash = null;  // 새로 개통한 도로 { roads, t, T }. 잠깐 빛나고 사라진다
     this.area = null;       // 끌어서 고른 범위
     this.fleetPick = null;  // 거점 목록에서 고른 거점
     this.siteMatch = null;  // 거점 목록의 조건에 맞는 거점. 조건이 없으면 null
@@ -761,6 +763,7 @@ export class Renderer {
     ctx.lineJoin = 'round';
     this.drawCongestion(ctx);
     this.drawRouteHighlight(ctx);
+    this.drawGlows(ctx, dt);
     this.drawTrucks(ctx);
     this.drawJunctionMarks(ctx);
     this.drawFerries(ctx);
@@ -800,6 +803,64 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     ctx.lineCap = 'round';
+  }
+
+  // 구간들을 교차로 한가운데까지 이어 그린 선. 끊겨 보이면 어디까지가 한 줄인지 알기 어렵다
+  stretchPath(edges) {
+    const nodes = this.game.net.nodes, p = new Path2D();
+    for (const e of edges) {
+      const flat = e.lanePolyline(MEDIAN + (LANE_W * e.road.lanes) / 2);
+      const a = nodes[e.from], b = nodes[e.to];
+      if (a.terminal) p.moveTo(flat[0], flat[1]);
+      else { p.moveTo(a.x, a.y); p.lineTo(flat[0], flat[1]); }
+      for (let i = 2; i < flat.length; i += 2) p.lineTo(flat[i], flat[i + 1]);
+      if (!b.terminal) p.lineTo(b.x, b.y);
+    }
+    return p;
+  }
+  // 새 도로를 알린다. 끝까지 그어 나간 뒤 잠깐 맥박치다 사라진다
+  flashRoads(roads, seconds = 9) { this.roadFlash = { roads, t: 0, T: seconds }; }
+  drawGlows(ctx, dt) {
+    const k = this.cam.k;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 3.4);
+    const g = this.jamGlow;
+    if (g && g.edges.length) {
+      g.t = (g.t || 0) + dt;
+      if (!g.path) g.path = this.stretchPath(g.edges);
+      const fade = Math.min(1, g.t / 0.3);
+      ctx.strokeStyle = SPOT_RED;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      // 하나를 콕 집으면 나머지는 옅어진다
+      ctx.globalAlpha = fade * (g.focus ? 0.24 : 0.4 + 0.25 * pulse);
+      ctx.lineWidth = Math.max(9 * k, 1.1);
+      ctx.stroke(g.path);
+      if (g.focus) {
+        if (!g.focusPath) g.focusPath = this.stretchPath(g.focus);
+        ctx.globalAlpha = fade * (0.5 + 0.3 * pulse);
+        ctx.lineWidth = Math.max(11 * k, 1.3);
+        ctx.stroke(g.focusPath);
+      }
+      ctx.globalAlpha = 1;
+    }
+    const f = this.roadFlash;
+    if (!f) return;
+    f.t += dt;
+    if (f.t >= f.T) { this.roadFlash = null; return; }
+    const u = Math.min(1, f.t / 2);
+    const reveal = u * (2 - u);
+    const fade = Math.min(1, (f.T - f.t) / 1.2);
+    ctx.strokeStyle = ACCENT;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = fade * (0.55 + 0.35 * pulse);
+    for (const r of f.roads) {
+      ctx.setLineDash(u < 1 ? [r.len * reveal, r.len * 2] : []);
+      ctx.lineWidth = Math.max(8 * k, 2 * (MEDIAN + LANE_W * r.lanes) + k);
+      ctx.stroke(this.roadPath(r));
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
 
   drawRouteHighlight(ctx) {

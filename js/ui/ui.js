@@ -11,7 +11,7 @@ export const TOOLS = [
   { id: 'stop', icon: 't_stop', color: '#d9412b', name: '정지 표지', key: '3', desc: '칠한 방향의 트럭이 반드시 한 번 멈춘 뒤 진입합니다. 흐름을 강하게 조절할 때 씁니다.' },
   { id: 'signal', icon: 't_signal', color: '#2c9a58', name: '신호등', key: '4', tech: 'signal', desc: '방향별로 번갈아 보냅니다. 교통량이 많은 교차로의 처리량이 크게 늘어납니다.' },
   { id: 'roundabout', icon: 't_roundabout', color: '#3f7fb8', name: '회전교차로', key: '5', tech: 'roundabout', desc: '멈추지 않고 합류합니다. 교통량이 중간쯤인 곳에 좋습니다.' },
-  { id: 'interchange', icon: 't_interchange', color: '#9a4fc4', name: '입체교차로', key: '6', tech: 'interchange', desc: '교차 흐름을 입체로 분리합니다. 같은 차로로 합류할 때만 양보합니다.' },
+  { id: 'interchange', icon: 't_interchange', color: '#9a4fc4', name: '입체교차로', key: '6', tech: 'interchange', desc: '교차 흐름을 입체로 분리합니다. 같은 차로로 합류할 때만 양보합니다. 연결로에서 기다릴 수 있어 IC 사이 짧은 구간과 거점 진입로에 트럭이 이어서 들어갑니다.' },
   { id: 'lane', icon: 't_lane', color: '#e0752b', name: '차로 추가', key: '7', desc: '도로를 눌러 양방향으로 한 차로씩 늘립니다. 끌어서 범위를 고르면 그 안의 도로를 한 번에 늘립니다. Shift를 누른 채 끌면 지나간 도로만 늘립니다.' },
   { id: 'remove', icon: 't_remove', color: '#8a857a', name: '원상복구', key: '8', desc: '교차로의 표지·신호를 없애 기본 상태로 돌립니다. 설치비는 돌려받지 못합니다.' },
   { id: 'fleet', icon: 't_fleet', color: '#3f7fb8', name: '눌러서 고르기', menu: true },
@@ -160,6 +160,7 @@ export class UI {
     this.holds = {};
     this.routeAll = false;
     if (sel && sel.type === 'route') this.measureRoute(sel);
+    this.r.jamGlow = this.jamFor(sel);
     this.syncListMap();
     this.app.applyCameraPadding();
     this.updateHighlights();
@@ -167,6 +168,57 @@ export class UI {
     this.renderTop();
     // 새 카드는 맨 위부터 보여 준다. 옆에 떠 있는 목록의 스크롤은 그대로 둔다
     if (sel) this.cardEl().querySelector('.p-body')?.scrollTo(0, 0);
+  }
+
+  // 고른 곳에 줄이 서 있으면 줄 전체를 칠한다
+  jamFor(sel) {
+    if (!sel) return null;
+    const g = this.game, nodes = g.net.nodes;
+    let edges = [];
+    if (sel.type === 'route') edges = sel.stretches.flatMap((q) => q.edges);
+    else if (sel.type === 'site') edges = g.queueBehind(nodes[sel.site.node]);
+    else if (sel.node) edges = g.queueBehind(sel.node);
+    else if (sel.road) {
+      const set = new Set();
+      for (const e of [sel.road.fwd, sel.road.bwd]) {
+        if (!g.stuckEdge(e)) continue;
+        set.add(e);
+        for (const q of g.queueBehind(nodes[e.from])) set.add(q);
+        for (const q of g.queueBehind(nodes[e.to])) set.add(q);
+      }
+      edges = [...set];
+    }
+    return edges.length ? { edges } : null;
+  }
+  // 구간이 한눈에 들어오게 카메라를 옮긴다
+  fitEdges(edges, duration = 1.1, margin = 1.3, minK = 0.07) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const e of edges) {
+      const b = e.road.bb;
+      x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]);
+    }
+    this.r.cam.fitBox(x0, y0, x1, y1, duration, margin, minK);
+  }
+  // 구간이 지금 화면의 빈 곳에 다 들어와 있는가
+  edgesInView(edges) {
+    const c = this.r.cam, p = c.pad;
+    return edges.every((e) => {
+      const b = e.road.bb;
+      return c.sx(b[0]) >= p.l && c.sx(b[2]) <= c.W - p.r && c.sy(b[1]) >= p.t && c.sy(b[3]) <= c.H - p.b;
+    });
+  }
+  // 새로 개통한 도로가 다 보이게 천천히 옮기고 어디인지 칠한다
+  showOpened(p) {
+    if (!p.roads.length) return;
+    this.flyToRoads(p.roads, 2.6, 1.25);
+    this.r.flashRoads(p.roads);
+  }
+  flyToRoads(roads, duration, margin) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of roads) {
+      x0 = Math.min(x0, r.bb[0]); y0 = Math.min(y0, r.bb[1]); x1 = Math.max(x1, r.bb[2]); y1 = Math.max(y1, r.bb[3]);
+    }
+    this.r.cam.fitBox(x0, y0, x1, y1, duration, margin, 0.07);
   }
 
   // 좁은 화면에는 창을 나란히 둘 자리가 없다. CSS의 좁은 화면 기준과 같아야 한다
@@ -187,6 +239,7 @@ export class UI {
     this.r.selection = null;
     this.r.hover = null;
     this.r.spotMarks = null;
+    this.r.jamGlow = null;
     this.holds = {};
     this.updateHighlights();
   }
@@ -251,6 +304,7 @@ export class UI {
     if (this.listOpen) this.listOrder = null;
     if (this.briefOpen) this.brief = null;
     if (this.sel && this.sel.type === 'route') this.measureRoute(this.sel);
+    this.r.jamGlow = this.jamFor(this.sel);
     this.renderInspector(true);
     // 내용이 그대로여도 새로 불러온 것을 알 수 있게 살짝 깜빡인다
     this.el.insp.querySelector('.p-body')?.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: 240, easing: 'ease-out' });
@@ -340,6 +394,8 @@ export class UI {
       }
       this.select(hit);
       this.revealSel(hit);
+      // 줄이 화면 밖까지 이어지면 다 보이게 물러난다
+      if (this.r.jamGlow && !this.edgesInView(this.r.jamGlow.edges)) this.fitEdges(this.r.jamGlow.edges);
       return;
     }
     if (!hit) return;
@@ -930,10 +986,10 @@ export class UI {
     const names = (set) => [...set].sort((a, b) => a.cap - b.cap).map((t) => t.short).join('·');
     return h('button', {
       class: 'btn up', key: 'go', disabled: !plan.n,
-      'data-tip': `더 적게 싣는 트럭을 모두 바꿉니다. 값은 지금 트럭을 팔고(구매가의 50%) 새로 산 것과 같습니다.\n달리는 트럭은 다음 거점에 닿을 때 바뀝니다.${plan.n < plan.all ? `\n자금이 모자라 ${plan.all}대 중 ${plan.n}대만 바꿉니다.` : ''}`,
+      'data-tip': `나르는 양은 그대로 두고 대수를 줄입니다. 1톤 5대가 5톤 1대가 됩니다.\n값은 새 트럭값에서 빠지는 트럭값의 절반을 뺀 만큼입니다.\n달리는 트럭은 다음 거점에 닿을 때 바뀌거나 사라집니다.${plan.n < plan.all ? `\n자금이 모자라 ${plan.all}대 중 ${plan.n}대만 바꿉니다.` : ''}`,
       onclick: () => this.convertFleet(routes, to),
       ...this.showRoutes(routes),
-    }, h('span', null, `${names(plan.n ? plan.some : plan.every)} ${plan.n || plan.all}대 → ${TRUCKS[to].short}`), h('span', { class: 'price' }, fmtWon(plan.n ? plan.cost : plan.full)));
+    }, h('span', null, `${names(plan.n ? plan.some : plan.every)} ${plan.n || plan.all}대 → ${TRUCKS[to].short} ${plan.k || plan.allK}대`), h('span', { class: 'price' }, fmtWon(plan.n ? plan.cost : plan.full)));
   }
   // 버튼에 마우스를 올리면 영향을 받는 노선을 지도에 보여 준다
   showRoutes(routes) {
@@ -943,19 +999,20 @@ export class UI {
     };
   }
   convertFleet(routes, to) {
-    let n = 0, paid = 0;
+    let n = 0, k = 0, paid = 0;
     for (const q of routes) {
       const r = this.game.convertTrucks(q, to);
       n += r.n;
+      k += r.k;
       paid += r.paid;
     }
     this.updateHighlights();
-    this.afterConvert(n, paid, to);
+    this.afterConvert(n, k, paid, to);
   }
-  afterConvert(n, paid, to) {
+  afterConvert(n, k, paid, to) {
     if (!n) { this.sound.deny(); return; }
     this.sound.buy();
-    this.toast('truck_hauler', `트럭 ${n}대를 ${TRUCKS[to].short}으로 바꿉니다`, `${fmtWon(paid)} · 달리는 트럭은 다음 거점에서 바뀝니다`);
+    this.toast('truck_hauler', `트럭 ${n}대를 ${TRUCKS[to].short} ${k}대로 바꿉니다`, `${fmtWon(paid)} · 달리는 트럭은 다음 거점에서 바뀝니다`);
     this.renderInspector(true);
     this.renderTop();
   }
@@ -1213,15 +1270,9 @@ export class UI {
   }
   goRoute(r) {
     this.select({ type: 'route', route: r });
-    // 노선이 한눈에 들어오게 맞춘다
-    const nodes = this.game.net.nodes;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const e of r.pathTo) {
-      for (const n of [nodes[e.from], nodes[e.to]]) {
-        x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y);
-      }
-    }
-    this.r.cam.fitBox(x0, y0, x1, y1, 0.7, 1.3, 0.1);
+    // 막힌 구간이 있으면 그 구간 전체를, 없으면 노선 전체를 보여 준다
+    const glow = this.r.jamGlow;
+    this.fitEdges(glow ? glow.edges : r.pathTo.filter((e) => e.road.kind !== 'f'), 1.1, 1.3, 0.09);
   }
   // 노선 카드의 고칠 곳은 열 때 정해 두고, 수치와 버튼만 지금 값을 보여 준다. 누르려던 버튼이 밀려나지 않는다
   measureRoute(sel) {
@@ -1232,14 +1283,17 @@ export class UI {
     const none = !spots.nodes.length && !spots.roads.length;
     const top = spots.nodes.find((q) => q.head) || spots.roads.find((q) => q.head);
     sel.spots = spots;
+    sel.stretches = g.routeStretches(r);
     sel.sites = jammed && none ? [r.from, r.to] : [];
     sel.verdict = !jammed ? ['ok', '지금은 잘 흐릅니다.']
       : top ? ['warn', `줄의 맨 앞은 ${this.spotName(top)}입니다. 여기를 풀면 뒤따라 풀립니다.`]
         : none ? ['warn', '길은 막히지 않습니다. 거점을 드나드는 데 시간이 걸립니다.']
           : ['warn', '아래 구간에 트럭이 몰립니다.'];
+    // 줄이 이어진 도로는 구간째 칠하니, 그 밖의 도로와 교차로만 따로 표시한다
+    const inGlow = new Set(sel.stretches.flatMap((q) => q.edges.map((e) => e.road)));
     this.r.spotMarks = [
       ...spots.nodes.map((q) => ({ type: 'node', node: q.node })),
-      ...spots.roads.filter((q) => q.road.kind !== 'f').map((q) => ({ type: 'road', road: q.road })),
+      ...spots.roads.filter((q) => q.road.kind !== 'f' && !inGlow.has(q.road)).map((q) => ({ type: 'road', road: q.road })),
     ];
   }
   routeView(sel) {
@@ -1266,12 +1320,26 @@ export class UI {
   spotHead(name, note, state, tone, head, mark, x, y) {
     return h('button', {
       class: 'spot-name', key: 'name', 'data-tip': '눌러서 지도에서 봅니다',
-      onclick: () => { this.sound.click(); this.r.cam.focus(x, y, Math.min(this.r.cam.k, 0.1)); },
+      onclick: () => this.goSpot(mark, x, y),
       onmouseenter: () => { this.r.hover = mark; }, onmouseleave: () => { this.r.hover = null; },
     },
       h('span', { class: 't' }, name, head && h('em', { key: 'head' }, '맨 앞')),
       state && h('span', { class: `state ${tone}`.trim(), key: 'state' }, state),
       note && h('small', { key: 'note' }, note));
+  }
+  // 고칠 곳을 누르면 그곳이 든 줄 전체가 보이게 옮기고 그 줄을 더 진하게 칠한다
+  goSpot(mark, x, y) {
+    this.sound.click();
+    const sel = this.sel, glow = this.r.jamGlow;
+    const node = mark.node ? mark.node.id : mark.site ? mark.site.node : null;
+    const st = sel && sel.stretches && sel.stretches.find((q) => q.edges.some((e) => (node !== null ? e.to === node || e.from === node : e.road === mark.road)));
+    if (st && glow) {
+      glow.focus = st.edges;
+      glow.focusPath = null;
+      this.fitEdges(st.edges);
+      return;
+    }
+    this.r.cam.focus(x, y, Math.min(this.r.cam.k, 0.1));
   }
   afterSpot(x, y) {
     this.sound.place();
@@ -1353,12 +1421,14 @@ export class UI {
 
   goSite(s) {
     this.select({ type: 'site', site: s });
+    if (this.r.jamGlow) { this.fitEdges(this.r.jamGlow.edges); return; }
     const k = Math.min(this.r.cam.k, 0.2);
     this.r.cam.focus(s.x, s.y, k);
   }
   goNode(n) {
     if (n.site) { this.goSite(n.site); return; }
     this.select({ type: 'node', node: n });
+    if (this.r.jamGlow) { this.fitEdges(this.r.jamGlow.edges); return; }
     this.r.cam.focus(n.x, n.y, Math.min(this.r.cam.k, 0.1));
   }
 
@@ -1526,30 +1596,23 @@ export class UI {
   // 자세히 안의 노선별 설정: 일부만 트럭을 바꾸거나 자동 배차를 켠다
   routeTune(q, m) {
     const g = this.game;
-    // 고른 차종보다 적게 싣는 트럭을 바꾼다. 대수는 구매 대수를 따르고, 돈이 모자라면 살 수 있는 만큼만
-    const conv = g.convertibleTrucks(q, m);
-    const limit = this.buyCount === 0 ? conv.length : Math.min(this.buyCount, conv.length);
-    let n = 0, cost = 0;
-    const names = new Set();
-    for (const v of conv.slice(0, limit)) {
-      const c = g.convertPrice(v, m);
-      if (cost + c > g.money) break;
-      cost += c;
-      n++;
-      names.add(TRUCKS[v.nextModel ?? v.modelIdx].short);
-    }
+    // 고른 차종보다 적게 싣는 트럭을 바꾼다. 새로 생길 대수는 구매 대수를 따르고, 돈이 모자라면 닿는 만큼만
+    const most = this.buyCount || Infinity;
+    const plan = g.convertWithin(q, m, g.money, most);
+    const whole = plan.keep ? plan : g.convertPlan(q, m, most);
+    const names = [...new Set(whole.olds.map((v) => TRUCKS[v.nextModel ?? v.modelIdx].short))].join('·');
     const auto = g.techs.has('autobuy');
     return h('div', { class: 'tune', key: `tune${q.id}`, onmouseenter: () => this.updateHighlights(q), onmouseleave: () => this.updateHighlights() },
       h('span', { class: 'who', key: 'who' }, q.to.name, h('small', null, this.truckMix(q))),
       auto ? h('label', { class: 'field small', key: 'auto' }, '자동', h('input', { type: 'checkbox', checked: q.auto, onchange: (e) => { q.auto = e.target.checked; q.model = m; } })) : h('span', { key: 'auto' }),
-      conv.length > 0 && h('button', {
-        class: 'btn up', key: 'conv', disabled: !n,
-        'data-tip': `더 적게 싣는 트럭 ${conv.length}대를 ${TRUCKS[m].name}으로 바꿀 수 있습니다.\n값은 지금 트럭을 팔고(구매가의 50%) 새로 산 것과 같습니다.\n달리는 트럭은 다음 거점에 닿을 때 바뀝니다.`,
+      whole.keep > 0 && h('button', {
+        class: 'btn up', key: 'conv', disabled: !plan.keep,
+        'data-tip': `나르는 양은 그대로 두고 대수를 줄입니다. 1톤 5대가 5톤 1대가 됩니다.\n값은 새 트럭값에서 빠지는 트럭값의 절반을 뺀 만큼입니다.\n달리는 트럭은 다음 거점에 닿을 때 바뀌거나 사라집니다.`,
         onclick: () => {
-          const r = g.convertTrucks(q, m, n);
-          this.afterConvert(r.n, r.paid, m);
+          const r = g.convertTrucks(q, m, most);
+          this.afterConvert(r.n, r.k, r.paid, m);
         },
-      }, h('span', null, `${[...names].join('·') || TRUCKS[conv[0].nextModel ?? conv[0].modelIdx].short} ${Math.max(1, n)}대 → ${TRUCKS[m].short}`), h('span', { class: 'price' }, fmtWon(n ? cost : g.convertPrice(conv[0], m)))));
+      }, h('span', null, `${names} ${whole.olds.length}대 → ${TRUCKS[m].short} ${whole.keep}대`), h('span', { class: 'price' }, fmtWon(whole.cost))));
   }
 
   baySec(s, jam) {
@@ -1850,7 +1913,7 @@ export class UI {
             h('div', { class: 't' }, h('b', null, p.name), h('small', null, `${Math.round(p.km)}km · ${p.desc}${PROJECT_COST[p.id].est ? ' · 사업비 추정' : ''}`)),
             h('div', { class: 'row-act' },
               h('button', { class: 'btn', onclick: () => { this.closeModal(); this.showProject(p); } }, '위치'),
-              h('button', { class: 'btn buy', disabled: g.money < price, onclick: () => { if (g.buildProject(p)) { this.sound.fanfare(); this.r.baseDirty = true; this.renderModal(); this.renderTop(); } } }, h('span', { class: 'price' }, fmtWon(price)))));
+              h('button', { class: 'btn buy', disabled: g.money < price, onclick: () => { if (g.buildProject(p)) { this.sound.fanfare(); this.r.baseDirty = true; this.closeModal(); } } }, h('span', { class: 'price' }, fmtWon(price)))));
         })) : h('p', { class: 'foot', key: 'none' }, '지금 건설할 수 있는 도로가 없습니다.'),
         (built.length > 0 || locked > 0) && h('p', { class: 'foot', key: 'foot' }, built.length > 0 && `개통: ${built.map((p) => p.name).join(', ')}. `, locked > 0 && `다음 권역이 열리면 ${locked}개가 더 나옵니다.`)));
   }
@@ -1860,6 +1923,7 @@ export class UI {
     for (const r of p.roads) { x0 = Math.min(x0, r.bb[0]); y0 = Math.min(y0, r.bb[1]); x1 = Math.max(x1, r.bb[2]); y1 = Math.max(y1, r.bb[3]); }
     this.r.cam.fitBox(x0 - 8, y0 - 8, x1 + 8, y1 + 8, 0.8, 1.2);
     this.r.ping((x0 + x1) / 2, (y0 + y1) / 2, '#8e6fc9');
+    this.r.flashRoads(p.roads, 5);
   }
 
   settingsDialog() {
