@@ -57,6 +57,7 @@ export class Vehicle {
     this.goods = null;
     this.leg = 0;        // 0 상차지로 이동, 1 하차지로 이동
     this.tripStart = 0;
+    this.legStart = null;     // 이번 편도를 시작한 때. 거점에 닿으면 비운다
     this.retire = false;
     this.seg = { seg: 0 };
     this.segRear = { seg: 0 };
@@ -933,6 +934,7 @@ export class Traffic {
     const net = this.net;
     for (const n of net.nodes) { n.waiting = 0; n.waitSum = 0; n.stuckNow = 0; }
     const K = 1 - Math.exp(-dt / 1.6);
+    const K2 = 1 - Math.exp(-dt / 20);
     for (const e of net.edges) {
       let count = 0, sumV = 0, stopped = 0, occupied = 0;
       for (const lane of e.lanes) {
@@ -963,6 +965,8 @@ export class Traffic {
         if (stopped / count > 0.55 && dens > 0.3) target = Math.max(target, 0.85);
       }
       e.cong += (target - e.cong) * K;
+      e.jam += (target - e.jam) * K2;
+      e.held += (stopped - e.held) * K2;
       if (stopped) {
         const n = net.nodes[e.to];
         n.waiting += stopped;

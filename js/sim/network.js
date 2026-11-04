@@ -123,6 +123,8 @@ export class Edge {
     // 통계
     this.cong = 0;            // 0~1 혼잡도
     this.count = 0;
+    this.jam = 0;             // 혼잡도의 느린 평균. 신호 한 번 기다린 것과 정말 막힌 것을 가른다
+    this.held = 0;            // 서 있는 트럭 수의 느린 평균
     this.flow = 0;
     this.path2d = null;
     this.geomVersion = 0;

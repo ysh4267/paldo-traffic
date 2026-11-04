@@ -145,10 +145,10 @@ export class Camera {
     this.cy = Math.max(-360, Math.min(370, this.cy));
   }
   // 화면에 가려지는 부분을 뺀 영역에 범위를 맞춘다
-  fitBox(x0, y0, x1, y1, duration = 0.9, margin = 1.12) {
+  fitBox(x0, y0, x1, y1, duration = 0.9, margin = 1.12, minK = 0) {
     const availW = Math.max(120, this.W - this.pad.l - this.pad.r);
     const availH = Math.max(120, this.H - this.pad.t - this.pad.b);
-    const k = this.clampK(Math.max((x1 - x0) / availW, (y1 - y0) / availH) * margin);
+    const k = this.clampK(Math.max((x1 - x0) / availW, (y1 - y0) / availH, minK / margin) * margin);
     const shiftX = ((this.pad.r - this.pad.l) / 2) * k;
     const shiftY = ((this.pad.b - this.pad.t) / 2) * k;
     this.flyTo((x0 + x1) / 2 + shiftX, (y0 + y1) / 2 + shiftY, k, duration);
@@ -177,6 +177,8 @@ export class Camera {
   }
 }
 
+const SPOT_RED = '#d9412b';
+
 // ── 렌더러 ─────────────────────────────────────────────
 export class Renderer {
   constructor(canvas, game) {
@@ -194,6 +196,7 @@ export class Renderer {
     this.selection = null;  // { type, ... }
     this.hover = null;
     this.highlightRoutes = null;
+    this.spotMarks = null;  // 브리핑에서 연 노선의 막히는 곳
     this.area = null;       // 끌어서 고른 범위
     this.fleetPick = null;  // 거점 목록에서 고른 거점
     this.siteMatch = null;  // 거점 목록의 조건에 맞는 거점. 조건이 없으면 null
@@ -1466,6 +1469,7 @@ export class Renderer {
       this.drawMark(ctx, this.prevHover, this.toolColor, this.prevHoverT);
       if (this.prevHoverT <= 0) this.prevHover = null;
     }
+    if (this.spotMarks) for (const m of this.spotMarks) this.drawMark(ctx, m, SPOT_RED, m.type === 'road' ? 0.5 : 1);
     const sk = this.markKey(this.selection);
     if (sk !== this.selKey) { this.selKey = sk; this.selT = 0; }
     this.selT = Math.min(1, this.selT + dt / FADE);

@@ -163,13 +163,15 @@ class App {
   }
 
   applyCameraPadding() {
-    const narrow = window.innerWidth < 760;
+    const narrow = window.innerWidth <= 760;
     const cam = this.renderer.cam;
-    const card = this.ui && (this.ui.sel || this.ui.listOpen);
+    const ui = this.ui;
+    const panel = ui && (ui.listOpen || ui.briefOpen);
+    const card = ui && (ui.sel || panel);
     // 좁은 화면에서 목록은 더 크게 열리고, 지도에서 고를 때만 지도를 넓게 내준다
-    const share = this.ui && this.ui.listOpen && this.ui.tool !== 'fleet' ? 0.6 : 0.46;
+    const share = panel && !ui.sel && ui.tool !== 'fleet' ? 0.6 : 0.46;
     if (narrow) cam.pad = { l: 8, r: 8, t: 84, b: card ? Math.round(window.innerHeight * share) + 56 : 92 };
-    else cam.pad = { l: 16, r: card ? 336 : 16, t: 60, b: 70 };
+    else cam.pad = { l: 16, r: ui && ui.sideShown() ? 648 : card ? 336 : 16, t: 60, b: 70 };
   }
 
   regionBox(maxIndex) {
@@ -310,8 +312,7 @@ class App {
     c.addEventListener('pointerleave', () => { this.renderer.hover = null; });
 
     // 패널에서 누르는 동안 갱신을 멈춰 클릭을 보호한다
-    const insp = document.getElementById('inspector');
-    insp.addEventListener('pointerdown', () => { this.ui.pressing = true; });
+    for (const id of ['inspector', 'sidecard']) document.getElementById(id).addEventListener('pointerdown', () => { this.ui.pressing = true; });
     window.addEventListener('pointerup', () => { this.ui.pressing = false; this.sound.unlock(); });
     window.addEventListener('keydown', () => this.sound.unlock());
     document.getElementById('ui').addEventListener('pointerdown', () => this.sound.unlock());

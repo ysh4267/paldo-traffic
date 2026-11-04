@@ -1,5 +1,5 @@
 // 게임 상태와 규칙. DOM이 없어 Node에서도 돌아간다 (밸런스 봇이 같은 코드를 쓴다).
-import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES } from '../sim/network.js';
+import { Network, shortestTree, extractPath, pathLength, MAX_LANES, BASE_LANES, SHIP_SPEED } from '../sim/network.js';
 import { Traffic, GAP } from '../sim/traffic.js';
 import {
   GOODS, TIER_WEIGHT, BASE_RATE, EXPAND_COST, BAY_COST, START_MONEY, TRUCK_STEP, TRUCKS, REGION_GOAL, ENDLESS_GOAL_BASE, TECHS, UPGRADES, TOOL_PRICE, PERKS, FAME_BASE, FAME_REF,
@@ -20,6 +20,16 @@ const LOT_LOOK = 1.6;    // 설 수 있는 거리보다 더 내다보는 거리 
 const LOT_HEADWAY = 0.08; // 앞차와 두는 시간 간격 s
 const LOT_PATIENCE = 8;  // 통로를 가로지르려고 이만큼 기다렸으면 비집고 들어간다 s
 const LOT_SQUEEZE = 2;   // 서로 막고 있던 트럭이 비켜 지나가는 동안 앞을 보지 않는 시간 s
+// 노선 정체
+const QUIET_SLOPE = 1.47; // 막히지 않은 편도 시간 = 자유 주행 시간 × 이 값 + QUIET_BASE. 빈 도로에서 잰 값
+const QUIET_BASE = 7;
+const QUIET_SHIP = 2.5;   // 배는 왔다 갔다 하니 타는 데까지 한 번 건너는 시간쯤 기다린다
+const LEG_EMA = 0.3;      // 편도 시간 평균에 새 기록을 얼마나 섞는지
+const JAM_RATIO = 1.35;   // 평소보다 이만큼 더 걸리면 막히는 노선으로 친다. 빈 도로의 트럭도 1.3배까지는 흔들린다
+const JAM_SECONDS = 10;   // 짧은 노선은 몇 초만 늦어도 배수가 크니, 이만큼은 늦어야 막힌 것으로 친다
+const SPOT_JAM = 0.3;     // 느린 혼잡도가 이만큼이면 막히는 곳
+const SPOT_HELD = 1.5;    // 서 있는 트럭이 평균 이만큼이면 막히는 곳
+const SPOT_MAX = 4;       // 노선 하나에 보여 줄 교차로와 도로 수
 
 export class Site {
   constructor(def, index, net) {
@@ -95,6 +105,11 @@ export class Route {
     this.model = 0;
     this.delivered = 0;
     this.opened = false;
+    this.freeBack = 0;
+    this.shipTo = 0;
+    this.shipBack = 0;
+    // 방향별 최근 편도 시간: [돌아오는 길, 가는 길]
+    this.legs = [{ real: 0, quiet: 0, n: 0 }, { real: 0, quiet: 0, n: 0 }];
   }
 }
 
@@ -150,6 +165,7 @@ export class Game {
     this.autoT = 0;
     this.jamT = 0;
     this.jams = [];
+    this.routeJams = [];
     this.navTrees = new Map();
     this.startTime = Date.now();
     this.assignOpenOrder();
@@ -387,6 +403,7 @@ export class Game {
     const r = v.route;
     v.leg = 1;
     v.path = this.pathFor(r, 1);
+    v.legStart = this.time;
     v.tripStart = this.time;
     v.expected = (r.freeTime / v.model.speed / (1 + this.upg.speed * 0.05)) * 1.6 + 11;
     this.leaveLot(s, v);
@@ -399,6 +416,7 @@ export class Game {
     v.cargo = 0;
     v.goods = null;
     v.path = this.pathFor(r, 0);
+    v.legStart = this.time;
     this.leaveLot(s, v);
   }
 
@@ -448,11 +466,115 @@ export class Game {
       const s = r.to;
       if (s.inbound >= s.bays * 3 && v.v < 1) return false;
       s.inbound++;
+      this.noteLeg(v);
       this.enterLot(s, v);
       return true;
     }
+    this.noteLeg(v);
     this.enterLot(r.from, v);
     return true;
+  }
+
+  // ── 노선 정체 ─────────────────────────────────────────
+  // 막히지 않은 길을 달릴 때 걸리는 편도 시간. 빈 도로를 달린 트럭의 실제 시간에 맞췄다 (가속과 회전 포함)
+  quietTime(r, leg, model) {
+    const free = leg === 1 ? r.freeTime : r.freeBack, ship = leg === 1 ? r.shipTo : r.shipBack;
+    return ((free - ship) / model.speed / (1 + this.upg.speed * 0.05)) * QUIET_SLOPE + QUIET_BASE + ship * QUIET_SHIP;
+  }
+  // 거점에 닿은 트럭이 편도에 걸린 시간을 적어 둔다
+  noteLeg(v) {
+    if (v.legStart === null || v.legStart === undefined) return;
+    const st = v.route.legs[v.leg];
+    const real = this.time - v.legStart, quiet = this.quietTime(v.route, v.leg, v.model);
+    st.real = st.n ? st.real + (real - st.real) * LEG_EMA : real;
+    st.quiet = st.n ? st.quiet + (quiet - st.quiet) * LEG_EMA : quiet;
+    st.n++;
+    v.legStart = null;
+  }
+  // 노선의 정체: 방향별로 평소보다 몇 배 걸리는지와, 그 때문에 길에서 노는 트럭 수.
+  // 도착한 트럭의 기록에 아직 달리는 트럭이 이미 넘긴 시간을 더한다. 꽉 막히면 도착하는 트럭이 없어 기록만으로는 늦게 안다
+  routeJam(r) {
+    const count = [0, 0], over = [0, 0], late = [0, 0];
+    const base = [0, 1].map((leg) => {
+      const st = r.legs[leg];
+      return st.n ? st.real / st.quiet : 1;
+    });
+    for (const v of r.trucks) {
+      if (v.legStart === null || v.legStart === undefined) continue;
+      const b = (this.time - v.legStart) / this.quietTime(r, v.leg, v.model);
+      count[v.leg]++;
+      if (b > base[v.leg]) { over[v.leg]++; late[v.leg] += b; }
+    }
+    const model = r.trucks.length ? r.trucks[0].model : TRUCKS[0];
+    const legs = [0, 1].map((leg) => {
+      const st = r.legs[leg];
+      const ratio = Math.max(1, (base[leg] * (1 + count[leg] - over[leg]) + late[leg]) / (1 + count[leg]));
+      const quiet = st.n ? st.quiet : this.quietTime(r, leg, model);
+      return { ratio, quiet, real: quiet * ratio };
+    });
+    const moving = legs[0].real + legs[1].real;
+    const lost = (r.trucks.length * (moving - legs[0].quiet - legs[1].quiet)) / moving;
+    const worst = legs[1].ratio >= legs[0].ratio ? 1 : 0;
+    return { route: r, back: legs[0], to: legs[1], worst, ratio: legs[worst].ratio, lost, trucks: r.trucks.length };
+  }
+  legJammed(leg) { return leg.ratio >= JAM_RATIO && leg.real - leg.quiet >= JAM_SECONDS; }
+  // 많이 막히는 노선부터. 트럭이 많이 묶여 있을수록 앞선다
+  updateRouteJams() {
+    const list = [];
+    for (const r of this.routes.values()) {
+      if (!r.valid || !r.trucks.length) continue;
+      const j = this.routeJam(r);
+      if (this.legJammed(j.worst ? j.to : j.back)) list.push(j);
+    }
+    list.sort((a, b) => b.lost - a.lost);
+    this.routeJams = list;
+  }
+  // 노선이 지나는 길에서 막히는 교차로와 도로. 정체는 뒤로 번지니 줄의 맨 앞이 진짜 원인이다
+  routeSpots(r) {
+    const nodes = new Map(), roads = new Map(), net = this.net;
+    const stuck = (e) => !!e && (e.jam >= SPOT_JAM || e.held >= SPOT_HELD);
+    const add = (map, key, leg, make, held, jam, head) => {
+      let q = map.get(key);
+      if (!q) { q = make(); q.held = 0; q.jam = 0; q.head = false; q.legs = [false, false]; map.set(key, q); }
+      q.held += held;
+      q.jam = Math.max(q.jam, jam);
+      q.head = q.head || head;
+      q.legs[leg] = true;
+    };
+    for (const leg of [1, 0]) {
+      const path = this.pathFor(r, leg);
+      if (!path) continue;
+      let behind = 0;
+      path.forEach((e, i) => {
+        const next = path[i + 1];
+        const isStuck = stuck(e);
+        behind = isStuck ? behind + e.held : 0;
+        const head = isStuck && !stuck(next);
+        const n = net.nodes[e.to];
+        const road = e.road;
+        if (road.kind === 'f') return;
+        add(roads, road, leg, () => ({ road }), e.held, e.jam, false);
+        const held = head ? behind : e.held;
+        if (!next && n.site) {
+          // 줄이 거점 앞에서 끝나면 칸이 모자란 것이다
+          add(nodes, n, leg, () => ({ node: n, site: n.site }), held, e.jam, head);
+        } else if (head && next && next.road.kind === 'f') {
+          // 배를 기다리는 줄이면 배가 작은 것이다
+          add(roads, next.road, leg, () => ({ road: next.road }), held, e.jam, true);
+        } else if (!n.terminal && n.inE.length >= 3) {
+          add(nodes, n, leg, () => ({ node: n }), held, e.jam, head);
+        } else if (head && next) {
+          // 갈림길이 아닌데 줄이 끊기면 다음 도로가 좁은 것이다
+          add(roads, next.road, leg, () => ({ road: next.road }), held, e.jam, true);
+        }
+      });
+    }
+    const pick = (map) => {
+      const all = [...map.values()].sort((a, b) => b.head - a.head || b.held - a.held || b.jam - a.jam);
+      const hot = all.filter((q) => q.head || q.jam >= SPOT_JAM || q.held >= SPOT_HELD);
+      return hot.slice(0, SPOT_MAX);
+    };
+    return { nodes: pick(nodes), roads: pick(roads) };
   }
 
   // ── 주차장 ────────────────────────────────────────────
@@ -486,6 +608,7 @@ export class Game {
   }
   // 새 트럭이나 구난된 트럭은 빈 칸에 바로 세운다
   parkNow(s, v) {
+    v.legStart = null;
     if (v.nextModel !== null) this.applyConvert(v);
     const stall = this.takeStall(s, v);
     if (stall >= 0) {
@@ -830,6 +953,11 @@ export class Game {
       r.pathBack = pb;
       r.dist = pathLength(pt);
       r.freeTime = treeOf(r.from).cost[r.to.spurIn.id];
+      r.freeBack = treeOf(r.to).cost[r.from.spurIn.id];
+      // 뱃길 시간은 트럭 속도와 상관없다
+      const ship = (path) => path.reduce((sum, e) => sum + (e.road.kind === 'f' ? e.road.len / SHIP_SPEED + 10 : 0), 0);
+      r.shipTo = ship(pt);
+      r.shipBack = ship(pb);
       const g = GOODS[r.goods];
       r.perTon = g.price * (0.91 + r.dist / 115);
     }
@@ -1299,7 +1427,7 @@ export class Game {
     }
     // 정체 순위
     this.jamT++;
-    if (this.jamT % 2 === 0) this.updateJams();
+    if (this.jamT % 2 === 0) { this.updateJams(); this.updateRouteJams(); }
     // 자동 구난
     if (this.techs.has('autotow')) {
       for (const n of this.net.nodes) {
@@ -1461,6 +1589,7 @@ export class Game {
         if (g.traffic.placeMidway(v, idx, Math.random())) {
           r.from.yard.splice(r.from.yard.indexOf(v), 1);
           g.dropLot(v);
+          v.legStart = g.time;
         } else {
           v.leg = 0; v.path = r.pathBack; v.cargo = 0; v.goods = null;
         }
