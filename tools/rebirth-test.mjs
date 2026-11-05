@@ -43,12 +43,18 @@ function grown(legacy) {
 // ── 값 ───────────────────────────────────────────────
 {
   const g = new Game(data);
-  ok('처음에는 환생할 수 없다', !g.canRebirth() && g.rebirthSave() === null);
+  const first = g.rebirthSave();
+  ok('처음부터 환생할 수 있지만 받는 명성은 0', first.legacy.runs === 1 && first.legacy.fame === 0);
+  const byRegion = g.regions.map((_, i) => g.fameFromRegions(i)).join();
+  ok('권역을 더 열수록 명성이 커진다', byRegion === '0,1,3,6,10,15,21,28,36', byRegion);
   g.applyStage(g.regions.length - 2, true);
-  ok('마지막 권역을 열기 전에는 환생할 수 없다', !g.canRebirth());
+  ok('권역을 다 열기 전에 환생해도 연 만큼 받는다', g.rebirthSave().legacy.fame === 28);
   g.time = 1234;
   g.applyStage(g.regions.length - 1);
-  ok('마지막 권역을 열면 환생할 수 있고 시각이 남는다', g.canRebirth() && g.flags.openAt === 1234);
+  ok('마지막 권역을 열면 시각이 남는다', g.flags.openAt === 1234);
+  g.totalEarned = FAME_REF;
+  ok('번 돈과 연 권역의 명성을 더한다', g.fameFromMoney() === FAME_BASE && g.fameGain() === FAME_BASE + 36);
+  g.totalEarned = 0;
   g.applyStage(0, true);
   g.totalEarned = FAME_REF;
   ok('FAME_REF를 벌면 명성 FAME_BASE', g.fameGain() === FAME_BASE, `${fmtWon(FAME_REF)} → ${g.fameGain()}`);
@@ -98,10 +104,37 @@ function grown(legacy) {
   ok('최고 단계를 넘겨 살 수 없다', g.buyPerk('roads') && !g.buyPerk('roads') && g.perk('roads') === roads.max);
   ok('없는 보너스는 못 산다', !g.buyPerk('nope'));
   for (const p of PERKS) {
-    const text = p.fmt(1) + p.fmt(p.max);
+    const text = p.fmt(1) + p.fmt(p.endless ? 999 : p.max);
     if (!text || text.includes('undefined') || text.includes('NaN')) ok(`${p.name} 문구`, false, text);
   }
   ok('보너스 문구가 모든 단계에서 멀쩡하다', true);
+}
+
+// ── 끝없는 보너스 ────────────────────────────────────
+{
+  const g = new Game(data, { legacy: { fame: 1e300 } });
+  const endless = PERKS.filter((p) => p.endless);
+  ok('최고 단계가 없는 보너스가 있다', endless.length >= 3 && endless.every((p) => p.max === Infinity));
+  for (const p of endless) for (let i = 0; i < 300; i++) g.buyPerk(p.id);
+  ok('300단계까지 계속 살 수 있다', endless.every((p) => g.perk(p.id) === 300));
+  ok('납품 대금과 실적이 곱으로 오른다', near(g.payMult(), Math.pow(1.05, 300)) && near(g.ptsMult(), Math.pow(1.05, 300)));
+  ok('적재량이 오른다', near(g.truckCap(TRUCKS[0]), TRUCKS[0].cap * 16));
+  ok('트럭값과 공사비가 0이 되지 않는다', near(g.modelPrice(0), TRUCKS[0].price / 13) && near(g.buildMult(), 1 / 13));
+  g.totalEarned = FAME_REF;
+  ok('환생 때 얻는 명성이 오른다', g.fameGain() === FAME_BASE * 16);
+  const n = roundtrip(g.rebirthSave());
+  ok('환생해도 단계가 남는다', endless.every((p) => n.perk(p.id) === 300));
+}
+
+// 적재량이 창고보다 훨씬 커도 트럭이 영영 기다리지 않는다
+{
+  const g = new Game(data, { money: 1e15, legacy: { perks: { load: 400 } } });
+  g.techs.add('trailer');
+  const r = [...g.routes.values()].filter((q) => q.valid).sort((a, b) => a.dist - b.dist)[0];
+  g.buyTruck(r, 2);
+  const big = g.truckCap(TRUCKS[2]) * 0.25 > g.siteCap(r.from);
+  run(g, 120);
+  ok('창고보다 큰 트럭도 납품한다', big && g.deliveries > 0, `${g.deliveries}회`);
 }
 
 // ── 환생 ─────────────────────────────────────────────
@@ -167,6 +200,23 @@ function grown(legacy) {
   const n = Game.restore(data, save);
   ok('명성이 없던 저장도 열린다', n.legacy.fame === 0 && n.legacy.runs === 0 && n.perk('pay') === 0);
   ok('보너스 없는 값은 그대로', near(n.payMult(), 1) && near(n.ptsMult(), 1) && near(n.buildMult(), 1) && near(n.modelPrice(0), TRUCKS[0].price));
+}
+
+// 자동 배차를 켜 둔 예전 저장
+{
+  const g = new Game(data);
+  const r = [...g.routes.values()].filter((q) => q.valid).sort((a, b) => a.dist - b.dist)[0];
+  const save = JSON.parse(JSON.stringify(g.serialize()));
+  save.techs = [...save.techs, 'autobuy'];
+  save.routes = [{ id: r.id, m: [0, 0], p: [100, 100], e: 5, d: 1, a: 1, sel: 2 }];
+  save.legacy = { perks: { tech: 12 } };
+  const n = Game.restore(data, save);
+  n.money = 1e18;
+  run(n, 30);
+  ok('자동 배차 저장이 열리고 트럭이 저절로 늘지 않는다', n.routes.get(r.id).trucks.length === 2);
+  ok('자동 배차 연구가 없다', !TECHS.some((t) => t.id === 'autobuy'));
+  ok('다시 저장하면 자동 배차가 남지 않는다', n.serialize().routes.every((q) => !('a' in q) && !('sel' in q)));
+  ok('기술 이전을 12단계 사 둔 저장도 값이 맞다', Game.freshSave(save.legacy).techs.length === TECHS.length);
 }
 
 console.log(errors ? `실패 ${errors}건` : '모두 통과');

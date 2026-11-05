@@ -104,8 +104,6 @@ export class Route {
     this.earned = 0;
     this.rate = 0;
     this.bucket = 0;
-    this.auto = false;
-    this.model = 0;
     this.delivered = 0;
     this.opened = false;
     this.freeBack = 0;
@@ -166,7 +164,6 @@ export class Game {
     this.flags = {};
     this.towCount = 0;
     this.routeT = 0;
-    this.autoT = 0;
     this.jamT = 0;
     this.jams = [];
     this.routeJams = [];
@@ -350,7 +347,8 @@ export class Game {
           const v = s.yard[0];
           const cap = this.truckCap(v.model);
           const full = s.stock >= cap;
-          const partial = v.yardT >= 8 && s.stock >= Math.max(0.5, cap * 0.25);
+          // 적재량이 창고보다 커져도 트럭이 영영 기다리지 않게 창고 크기로 막는다
+          const partial = v.yardT >= 8 && s.stock >= Math.min(Math.max(0.5, cap * 0.25), this.siteCap(s) * 0.5);
           if (!full && !partial) break;
           s.yard.shift();
           this.startLoad(s, v, bayF);
@@ -390,7 +388,7 @@ export class Game {
     }
   }
 
-  truckCap(model) { return model.cap * (1 + this.upg.cap * 0.1); }
+  truckCap(model) { return model.cap * (1 + this.upg.cap * 0.1) * (1 + this.perk('load') * 0.05); }
 
   startLoad(s, v, bayF) {
     const cap = this.truckCap(v.model);
@@ -894,9 +892,9 @@ export class Game {
   }
 
   // 연구와 명성 보너스를 합한 납품가 배율
-  payMult() { return (1 + this.upg.pay * 0.14) * (1 + this.perk('pay') * 0.1) * this.fameMult(); }
+  payMult() { return (1 + this.upg.pay * 0.14) * (1 + this.perk('pay') * 0.1) * Math.pow(1.05, this.perk('brand')) * this.fameMult(); }
   // 권역이 돈이 아니라 실적으로 열리니, 실적도 함께 올라야 회차가 빨라진다
-  ptsMult() { return (1 + this.perk('pts') * 0.1) * this.fameMult(); }
+  ptsMult() { return (1 + this.perk('pts') * 0.1) * Math.pow(1.05, this.perk('network')) * this.fameMult(); }
 
   payDelivery(s, v) {
     const g = GOODS[v.goods];
@@ -1074,7 +1072,7 @@ export class Game {
   }
 
   // 명성 보너스를 뺀 첫 대 가격
-  modelPrice(modelIdx) { return TRUCKS[modelIdx].price * (1 - this.perk('truck') * 0.03); }
+  modelPrice(modelIdx) { return TRUCKS[modelIdx].price * (1 - this.perk('truck') * 0.03) * this.supplyMult(); }
 
   truckPrice(route, modelIdx) {
     return this.modelPrice(modelIdx) * (1 + TRUCK_STEP * route.trucks.length);
@@ -1317,7 +1315,9 @@ export class Game {
   get truckCount() { return this.traffic.vehicles.size; }
 
   // ── 도구 가격과 적용 ───────────────────────────────────
-  buildMult() { return 1 - this.perk('build') * 0.04; }
+  buildMult() { return (1 - this.perk('build') * 0.04) * this.supplyMult(); }
+  // 단계가 끝없이 올라도 값이 0 아래로 내려가지 않게 나눈다
+  supplyMult() { return 1 / (1 + this.perk('supply') * 0.04); }
   landFactor(region) { return LAND_FACTOR[Math.min(region, LAND_FACTOR.length - 1)]; }
 
   // 몇 번째 차로든 값이 같다. 길이와 땅값으로만 달라진다
@@ -1473,14 +1473,18 @@ export class Game {
     this.legacy.perks[id] = this.perk(id) + 1;
     return true;
   }
-  // 모든 권역을 열면 환생할 수 있다. 더 벌어 둘수록 명성을 더 받는다
-  canRebirth() { return this.allUnlocked; }
-  fameRate() { return FAME_BASE * (1 + this.perk('fame') * 0.1); }
+  // 환생은 언제든 할 수 있다. 더 벌어 둘수록, 권역을 더 열수록 명성을 더 받는다
+  fameBoost() { return 1 + this.perk('fame') * 0.1 + this.perk('hall') * 0.05; }
+  fameRate() { return FAME_BASE * this.fameBoost(); }
   // 이번 회차에 번 돈으로 받을 명성
-  fameGain() { return Math.floor(this.fameRate() * Math.sqrt(this.totalEarned / FAME_REF)); }
+  fameFromMoney() { return Math.floor(this.fameRate() * Math.sqrt(this.totalEarned / FAME_REF)); }
+  // 연 권역으로 받을 명성. 두 번째 권역이 +1, 세 번째가 +2로 뒤로 갈수록 커진다
+  // 시작 권역은 치지 않아야 환생만 반복해서 명성을 벌 수 없다. 아홉 권역을 다 열면 36
+  fameFromRegions(stage = this.stage) { return Math.floor(this.fameBoost() * stage * (stage + 1) / 2); }
+  fameGain() { return this.fameFromMoney() + this.fameFromRegions(); }
   // 명성 1을 더 받으려면 더 벌어야 할 돈
   fameNext() {
-    const need = FAME_REF * Math.pow((this.fameGain() + 1) / this.fameRate(), 2);
+    const need = FAME_REF * Math.pow((this.fameFromMoney() + 1) / this.fameRate(), 2);
     return Math.max(0, need - this.totalEarned);
   }
   // 회차를 새로 시작하는 저장 자료. 명성 보너스만 반영하고 나머지는 처음 상태다
@@ -1497,7 +1501,6 @@ export class Game {
   }
   // 환생한 다음 회차의 저장 자료. 도로 유산이 있으면 깔아 둔 시설이 남는다
   rebirthSave() {
-    if (!this.canRebirth()) return null;
     const L = this.legacy, gain = this.fameGain();
     const best = { ...L.best, boom: Math.max(L.best.boom || 0, this.endless) };
     if (this.flags.openAt && (!best.time || this.flags.openAt < best.time)) best.time = this.flags.openAt;
@@ -1586,20 +1589,6 @@ export class Game {
         if (n.stuckT > 40 && !n.terminal) this.tow(n, true);
       }
     }
-    // 자동 배차
-    if (this.techs.has('autobuy')) {
-      this.autoT++;
-      if (this.autoT % 3 === 0) {
-        for (const r of this.routes.values()) {
-          if (!r.auto || !r.valid) continue;
-          const s = r.from;
-          if (s.stock > this.siteCap(s) * 0.6 && !s.yard.length) {
-            const price = this.truckPrice(r, r.model);
-            if (this.money > price * 4) this.buyTruck(r, r.model);
-          }
-        }
-      }
-    }
     // 뱃길 트럭 수 표시용 등
     if (this.flags.first !== true && this.deliveries > 0) { this.flags.first = true; this.events.push({ type: 'first' }); }
   }
@@ -1661,8 +1650,8 @@ export class Game {
       sites: this.sites.filter((s) => s.available).map((s) => ({
         id: s.id, lv: s.level, b: s.bays, st: s.stock, inb: s.inBuf, gr: s.growth, cs: s.cityStage, d: s.delivered,
       })),
-      routes: [...this.routes.values()].filter((r) => r.trucks.length || r.earned || r.auto).map((r) => ({
-        id: r.id, m: r.trucks.map((t) => t.nextModel ?? t.modelIdx), p: r.trucks.map((t) => Math.round(t.price || 0)), e: r.earned, d: r.delivered, a: r.auto ? 1 : 0, sel: r.model,
+      routes: [...this.routes.values()].filter((r) => r.trucks.length || r.earned).map((r) => ({
+        id: r.id, m: r.trucks.map((t) => t.nextModel ?? t.modelIdx), p: r.trucks.map((t) => Math.round(t.price || 0)), e: r.earned, d: r.delivered,
       })),
     };
   }
@@ -1728,7 +1717,7 @@ export class Game {
     for (const rec of save.routes || []) {
       const r = g.routes.get(rec.id);
       if (!r || !r.valid) continue;
-      r.earned = (rec.e || 0) * oldWon; r.delivered = rec.d || 0; r.auto = !!rec.a; r.model = rec.sel || 0;
+      r.earned = (rec.e || 0) * oldWon; r.delivered = rec.d || 0;
       rec.m.forEach((modelIdx, i) => {
         const v = g.addTruck(r, modelIdx, oldWon > 1 ? TRUCKS[modelIdx].price : (rec.p ? rec.p[i] : 0));
         // 도로에 고르게 흩어 놓아 불러오자마자 한꺼번에 몰리지 않게 한다

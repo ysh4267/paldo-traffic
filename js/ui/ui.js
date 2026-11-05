@@ -645,7 +645,7 @@ export class UI {
       this.kv('누적 물동량', fmtTon(g.totalTons)),
       this.kv('누적 수익', fmtWon(g.totalEarned)),
       this.kv('운행 시간', fmtTime(g.time)),
-      g.legacy.runs > 0 && this.kv('회차', `${g.legacy.runs + 1}회차 · 명성 ${g.legacy.fame}`));
+      g.legacy.runs > 0 && this.kv('회차', `${g.legacy.runs + 1}회차 · 명성 ${fmtKo(g.legacy.fame)}`));
   }
 
   renderMenu() {
@@ -654,10 +654,10 @@ export class UI {
       || UPGRADES.some((u) => g.upg[u.id] < u.max && g.money >= g.upgradeCostOf(u.id));
     const buildReady = g.projects.some((p) => g.projectAvailable(p) && g.money >= g.projectPrice(p));
     const btn = (key, label, tip, onclick, dot, on) => h('button', { key, class: on ? 'on' : '', onclick, 'data-tip': tip, 'aria-label': tip, 'aria-pressed': on ? 'true' : null }, label, dot && h('i', { class: `dot ${dot === 'bad' ? 'bad' : ''}`.trim(), key: 'dot' }));
-    // 환생은 권역이 하나 더 열리면 보여 준다. 처음부터 다 꺼내 놓으면 낯설다
+    // 환생은 언제든 할 수 있지만 첫 트럭을 배우는 동안에는 꺼내 놓지 않는다
     const L = g.legacy;
-    const rebirthShown = g.stage >= 1 || L.runs > 0 || L.fame > 0;
-    const rebirthReady = g.canRebirth() || PERKS.some((p) => g.perk(p.id) < p.max && L.fame >= g.perkCost(p.id));
+    const rebirthShown = !g.flags.tutorial;
+    const rebirthReady = g.allUnlocked || PERKS.some((p) => g.perk(p.id) < p.max && L.fame >= g.perkCost(p.id));
     // 정체 브리핑도 트럭이 몇 대 늘어야 쓸 일이 생긴다
     const briefShown = g.stage >= 1 || g.truckCount >= 6 || L.runs > 0;
     const jammed = !this.briefOpen && g.routeJams.some((j) => j.ratio >= 2 && j.lost >= 1);
@@ -1091,7 +1091,6 @@ export class UI {
       stopped.length > 0 && `원료가 없어 멈춘 ${stopped.length}곳은 뺌`,
     ].filter(Boolean).join(' · ');
     const on = BUY_ON.find((q) => q[0] === this.buyOn);
-    const autoOn = running.length > 0 && running.every((q) => q.auto);
     return h('div', { class: 'list-foot', key: 'foot' },
       !this.listPicked && h('div', { class: 'foot-top', key: 'top', 'data-tip': `달리는 노선 ${running.length}개 · 트럭 ${trucks}대` },
         h('b', null, `${picked.length}곳 고름`), outside > 0 && h('small', null, `${outside}곳은 조건 밖`),
@@ -1114,9 +1113,7 @@ export class UI {
       conv.all > 0 && this.convertBtn(conv, running, m),
       h('div', { class: 'btn-row', key: 'grow' },
         this.siteBtn('upg', '생산 +38%', upg, '고른 거점의 생산을 늘립니다. 늘어난 물량을 나를 트럭이 더 필요해집니다.', (s) => g.buyUpgrade(s), '생산을 늘렸습니다'),
-        bay.all > 0 && this.siteBtn('bay', '상하차 +1칸', bay, '고른 거점의 상하차장을 한 칸씩 늘립니다. 진입로 정체가 큰길까지 번지는 것을 막아 줍니다.', (s) => g.buyBay(s), '상하차장을 늘렸습니다')),
-      g.techs.has('autobuy') && running.length > 0 && h('label', { class: 'field small', key: 'auto', 'data-tip': '달리는 노선 전부에 자동 배차를 켜거나 끕니다' }, '달리는 노선 자동 배차',
-        h('input', { type: 'checkbox', checked: autoOn, onchange: (e) => { for (const q of running) { q.auto = e.target.checked; q.model = m; } this.renderInspector(true); } })));
+        bay.all > 0 && this.siteBtn('bay', '상하차 +1칸', bay, '고른 거점의 상하차장을 한 칸씩 늘립니다. 진입로 정체가 큰길까지 번지는 것을 막아 줍니다.', (s) => g.buyBay(s), '상하차장을 늘렸습니다')));
   }
   // 생산이나 상하차장처럼 거점마다 한 번씩 사는 버튼
   siteBtn(key, label, plan, tip, buy, done) {
@@ -1605,7 +1602,7 @@ export class UI {
   truckMix(q) {
     return TRUCKS.map((t, i) => [t.short, q.trucks.filter((v) => (v.nextModel ?? v.modelIdx) === i && !v.retire).length]).filter((p) => p[1]).map((p) => `${p[0]} ${p[1]}대`).join(' · ');
   }
-  // 자세히 안의 노선별 설정: 일부만 트럭을 바꾸거나 자동 배차를 켠다
+  // 자세히 안의 노선별 설정: 일부만 트럭을 바꾼다
   routeTune(q, m) {
     const g = this.game;
     // 고른 차종보다 적게 싣는 트럭을 바꾼다. 새로 생길 대수는 구매 대수를 따르고, 돈이 모자라면 닿는 만큼만
@@ -1613,10 +1610,8 @@ export class UI {
     const plan = g.convertWithin(q, m, g.money, most);
     const whole = plan.keep ? plan : g.convertPlan(q, m, most);
     const names = [...new Set(whole.olds.map((v) => TRUCKS[v.nextModel ?? v.modelIdx].short))].join('·');
-    const auto = g.techs.has('autobuy');
     return h('div', { class: 'tune', key: `tune${q.id}`, onmouseenter: () => this.updateHighlights(q), onmouseleave: () => this.updateHighlights() },
       h('span', { class: 'who', key: 'who' }, q.to.name, h('small', null, this.truckMix(q))),
-      auto ? h('label', { class: 'field small', key: 'auto' }, '자동', h('input', { type: 'checkbox', checked: q.auto, onchange: (e) => { q.auto = e.target.checked; q.model = m; } })) : h('span', { key: 'auto' }),
       whole.keep > 0 && h('button', {
         class: 'btn up', key: 'conv', disabled: !plan.keep,
         'data-tip': `나르는 양은 그대로 두고 대수를 줄입니다. 1톤 5대가 5톤 1대가 됩니다.\n값은 새 트럭값에서 빠지는 트럭값의 절반을 뺀 만큼입니다.\n달리는 트럭은 다음 거점에 닿을 때 바뀌거나 사라집니다.`,
@@ -1664,7 +1659,7 @@ export class UI {
       if (!jam) kids.push(this.baySec(s, false));
       // 노선마다 따로 정하는 일은 여기에 둔다. 평소 줄에는 사고파는 것만 남긴다
       const tuned = s.produces ? s.routesOut.filter((q) => q.valid && q.trucks.length) : [];
-      if (tuned.length && (g.techs.has('autobuy') || tuned.some((q) => g.convertibleTrucks(q, this.modelSel).length))) {
+      if (tuned.some((q) => g.convertibleTrucks(q, this.modelSel).length)) {
         kids.push(h('div', { class: 'sec', key: 'tune' }, h('h3', null, '노선별 설정'), tuned.map((q) => this.routeTune(q, this.modelSel))));
       }
       if (s.inputs && !s.isCity) kids.push(...this.factoryIncoming(s));
@@ -1870,43 +1865,45 @@ export class UI {
   // 환생과 명성 상점
   rebirthDialog() {
     const g = this.game, L = g.legacy;
-    const can = g.canRebirth();
     const gain = g.fameGain();
+    const nextRegion = !g.allUnlocked && g.fameFromRegions(g.stage + 1) - g.fameFromRegions();
     const perkRow = (p) => {
       const lv = g.perk(p.id), maxed = lv >= p.max, cost = g.perkCost(p.id);
       return h('div', { class: 'row', key: p.id, 'data-tip': p.desc },
         h('span', { class: 'disc' }, ico(p.icon)),
-        h('div', { class: 't' }, h('b', null, p.max > 1 ? `${p.name} ${lv}/${p.max}` : p.name), h('small', null, maxed ? `${p.fmt(lv)} · 최고 단계` : lv ? `${p.fmt(lv)} → ${p.to(lv + 1)}` : p.fmt(1))),
-        !maxed && h('button', { class: 'btn buy', disabled: L.fame < cost, onclick: () => { if (g.buyPerk(p.id)) { this.sound.buy(); this.renderModal(); this.renderTop(); } else this.sound.deny(); } }, h('span', { class: 'price' }, `명성 ${cost}`)));
+        h('div', { class: 't' }, h('b', null, p.endless ? `${p.name} ${lv}단계` : p.max > 1 ? `${p.name} ${lv}/${p.max}` : p.name), h('small', null, maxed ? `${p.fmt(lv)} · 최고 단계` : lv ? `${p.fmt(lv)} → ${p.to(lv + 1)}` : p.fmt(1))),
+        !maxed && h('button', { class: 'btn buy', disabled: L.fame < cost, onclick: () => { if (g.buyPerk(p.id)) { this.sound.buy(); this.renderModal(); this.renderTop(); } else this.sound.deny(); } }, h('span', { class: 'price' }, `명성 ${fmtKo(cost)}`)));
     };
     const lost = g.perk('roads') ? '돈, 트럭, 연구, 권역 진행' : '돈, 트럭, 연구, 권역 진행, 교차로와 차로';
     let action;
-    if (!can) action = h('p', { class: 'status', key: 'lock' }, `${g.regions[g.regions.length - 1].short}까지 모든 권역을 열면 환생할 수 있습니다. 지금 ${g.stage + 1} / ${g.regions.length} 권역입니다.`);
-    else if (!this.confirmRebirth) {
-      action = h('button', { class: 'btn buy', key: 'go', disabled: gain < 1, onclick: () => { this.sound.click(); this.confirmRebirth = true; this.renderModal(); } }, h('span', null, '환생하기'), h('span', { class: 'price' }, `명성 +${gain}`));
+    if (!this.confirmRebirth) {
+      action = h('button', { class: 'btn buy', key: 'go', onclick: () => { this.sound.click(); this.confirmRebirth = true; this.renderModal(); } }, h('span', null, '환생하기'), h('span', { class: 'price' }, `명성 +${fmtKo(gain)}`));
     } else {
       action = [
-        h('p', { class: 'status warn', key: 'warn' }, `${lost}가 처음으로 돌아갑니다. 되돌릴 수 없습니다.`),
+        h('p', { class: `status ${gain ? 'warn' : 'bad'}`, key: 'warn' }, `${gain ? '' : '받는 명성이 없습니다. '}${lost}가 처음으로 돌아갑니다. 되돌릴 수 없습니다.`),
         h('div', { class: 'btn-row', key: 'yes' },
           h('button', { class: 'btn', onclick: () => { this.sound.click(); this.confirmRebirth = false; this.renderModal(); } }, '취소'),
-          h('button', { class: 'btn buy', onclick: () => this.app.rebirth() }, `환생하고 명성 +${gain}`)),
+          h('button', { class: 'btn buy', onclick: () => this.app.rebirth() }, gain ? `환생하고 명성 +${fmtKo(gain)}` : '명성 없이 환생')),
       ];
     }
     return h('div', { class: 'dialog', role: 'dialog', 'aria-label': '환생' },
-      this.dialogHead('환생', `${L.runs + 1}회차 · 보유 명성 ${L.fame}`),
+      this.dialogHead('환생', `${L.runs + 1}회차 · 보유 명성 ${fmtKo(L.fame)}`),
       h('div', { class: 'p-body' },
         h('div', { class: 'sec', key: 'now' },
           h('div', { class: 'kvs', key: 'kvs' },
-            this.kv('이번 회차에 번 돈', fmtWon(g.totalEarned)),
-            this.kv(can ? '지금 환생하면' : '지금까지 번 돈으로는', `명성 +${gain}`),
+            this.kv(`번 돈 ${fmtWon(g.totalEarned)}`, `명성 +${fmtKo(g.fameFromMoney())}`, 'money'),
+            this.kv(`연 권역 ${g.stage + 1} / ${g.regions.length}곳`, `명성 +${fmtKo(g.fameFromRegions())}`, 'regions'),
+            this.kv('지금 환생하면', `명성 +${fmtKo(gain)}`),
             this.kv('명성 1을 더 받으려면', `${fmtWon(g.fameNext())} 더`),
+            nextRegion > 0 && this.kv('다음 권역을 열면', `명성 +${fmtKo(nextRegion)} 더`),
             L.runs > 0 && this.kv('지난 환생', `${L.runs}회`),
-            L.total > 0 && this.kv(`모은 명성 ${L.total}`, `납품 대금과 실적 +${L.total}%`),
+            L.total > 0 && this.kv(`모은 명성 ${fmtKo(L.total)}`, `납품 대금과 실적 +${fmtKo(L.total)}%`, 'total'),
             L.best.time > 0 && this.kv('가장 빠른 전국 개통', fmtTime(L.best.time))),
           action),
-        h('div', { class: 'list', key: 'perks-now' }, h('h3', null, '바로 듣는 보너스'), PERKS.filter((p) => p.now).map(perkRow)),
+        h('div', { class: 'list', key: 'perks-endless' }, h('h3', null, '끝없이 올리는 보너스'), PERKS.filter((p) => p.endless).map(perkRow)),
+        h('div', { class: 'list', key: 'perks-now' }, h('h3', null, '바로 듣는 보너스'), PERKS.filter((p) => p.now && !p.endless).map(perkRow)),
         h('div', { class: 'list', key: 'perks-next' }, h('h3', null, '다음 회차부터 듣는 보너스'), PERKS.filter((p) => !p.now).map(perkRow)),
-        h('p', { class: 'foot', key: 'foot' }, '모은 명성 1마다 납품 대금과 실적이 1% 오릅니다. 명성을 써도 줄지 않습니다. 명성은 언제든 쓸 수 있고, 환생해도 명성과 보너스, 기록은 남습니다. 많이 벌수록 명성을 더 받지만 벌이가 늘수록 효율은 줄어듭니다.')));
+        h('p', { class: 'foot', key: 'foot' }, '환생은 언제든 할 수 있습니다. 많이 벌수록, 권역을 더 열수록 명성을 더 받습니다. 권역은 뒤로 갈수록 주는 명성이 커지고, 벌이는 늘수록 효율이 줄어듭니다. 모은 명성 1마다 납품 대금과 실적이 1% 오르며, 명성을 써도 줄지 않습니다. 환생해도 명성과 보너스, 기록은 남습니다. 끝없이 올리는 보너스는 최고 단계가 없고 바로 듣습니다.')));
   }
 
   buildDialog() {

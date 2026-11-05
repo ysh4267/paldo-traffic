@@ -106,7 +106,6 @@ class App {
   // 다음 회차를 저장해 두고 그것으로 다시 연다
   rebirth() {
     const next = this.game.rebirthSave();
-    if (!next) return;
     if (!store.set(SAVE_KEY, JSON.stringify(next))) {
       this.ui.toast('warn', '저장할 수 없어 환생하지 못했습니다', '브라우저 저장 공간을 확인하세요');
       return;
@@ -425,8 +424,7 @@ class App {
         this.sound.fanfare();
         ui.showBanner('신규 권역 개통', `${e.region.short} 방면`, e.region.index === 5 ? '뱃길이 열렸습니다. 항구에서 카페리로 제주까지 갑니다.' : `${e.region.name}이 열렸습니다. 새 거점이 차례로 문을 엽니다.`);
         this.fitToStage(1.8);
-        ui.toast('star', `${e.region.name} 개통`, '납품 목표가 새로 시작됩니다');
-        if (g.canRebirth()) ui.toast('star', '환생이 열렸습니다', `지금 환생하면 명성 ${g.fameGain()}. 더 벌수록 늘어납니다`, () => ui.openModal('rebirth'));
+        ui.toast('star', `${e.region.name} 개통`, `납품 목표가 새로 시작됩니다 · 환생 명성 +${g.fameFromRegions() - g.fameFromRegions(e.region.index - 1)}`);
         ui.renderDock();
         this.save();
       } else if (e.type === 'site') {
