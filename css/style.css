@@ -249,7 +249,7 @@ svg { display: block; width: 100%; height: 100%; }
 .route-act { display: flex; align-items: center; gap: 2px; flex: none; }
 .route-act .count { min-width: 30px; text-align: center; font-weight: 600; font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; animation: bump .28s var(--pop); }
 .route-act .btn { min-height: 28px; }
-.btn.sell { width: 24px; min-height: 28px; padding: 0; background: none; color: var(--muted); }
+.btn.sell { width: 24px; min-height: 28px; padding: 0; background: none; color: var(--muted); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .btn.sell:hover:not(:disabled) { background: var(--soft-2); color: var(--ink); }
 .btn.sell:disabled { opacity: .3; }
 .btn.sell .ico { width: 10px; height: 10px; }

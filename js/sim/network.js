@@ -389,10 +389,88 @@ export class Node {
   get degree() { return this.roads.length; }
 }
 
+// 지도를 만들 때 겹치는 길을 합치면서 고속도로 일부가 국도나, 아직 안 지은 다른 고속도로로 남은 곳이 있다.
+// 그대로 두면 왕복 4차로가 2차로로 좁아지거나 건설 전까지 아예 끊기므로, 같은 이름 고속도로의 서로 다른 조각을
+// 그런 길 한두 조각이 곧게 잇는 곳을 그 고속도로로 올린다. 이 고속도로 자체가 공사로 잠겨 있으면 아직 없는 길이니 잇지 않는다
+const GAP_MAX_KM = 18;
+const GAP_MAX_BEND = 1.3;
+export function bridgeHighwayGaps(nodes, roads) {
+  const lengthOf = (d) => {
+    let sum = 0;
+    for (let i = 2; i < d.p.length; i += 2) sum += Math.hypot(d.p[i] - d.p[i - 2], d.p[i + 1] - d.p[i - 1]);
+    return sum;
+  };
+  const touching = new Map(); // 노드 → 이름 → 닿아 있는 고속도로
+  for (const d of roads) {
+    if (d.k !== 'x') continue;
+    for (const id of [d.a, d.b]) {
+      if (!touching.has(id)) touching.set(id, new Map());
+      const byName = touching.get(id);
+      if (!byName.has(d.n)) byName.set(d.n, []);
+      byName.get(d.n).push(d);
+    }
+  }
+  // 그 이름의 고속도로가 여기서 끝나면 그 조각을 돌려준다
+  const endOf = (id, name) => {
+    const list = touching.get(id)?.get(name);
+    return list && list.length === 1 && !list[0].lock ? list[0] : null;
+  };
+  // 이름별로 이어진 조각을 묶는다. 같은 조각의 끝끼리 이으면 나란히 달리는 길을 고속도로로 잘못 올리게 된다
+  const parent = new Map();
+  const find = (k) => {
+    if (!parent.has(k)) parent.set(k, k);
+    while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); }
+    return k;
+  };
+  const piece = (name, id) => find(`${name}:${id}`);
+  for (const d of roads) if (d.k === 'x') parent.set(piece(d.n, d.a), piece(d.n, d.b));
+  const national = new Map();
+  roads.forEach((d, i) => {
+    if (d.k !== 'n' && !(d.k === 'x' && d.lock)) return;
+    for (const [u, v] of [[d.a, d.b], [d.b, d.a]]) {
+      if (!national.has(u)) national.set(u, []);
+      national.get(u).push([v, i]);
+    }
+  });
+  const gaps = [];
+  for (const [id, byName] of touching) {
+    for (const name of byName.keys()) {
+      const from = endOf(id, name);
+      if (!from) continue;
+      const walk = (u, km, path) => {
+        for (const [v, i] of national.get(u) || []) {
+          if (path.includes(i) || roads[i].n === name) continue;
+          const total = km + lengthOf(roads[i]);
+          if (total > GAP_MAX_KM) continue;
+          const next = [...path, i];
+          if (endOf(v, name)) {
+            const straight = Math.hypot(nodes[id].x - nodes[v].x, nodes[id].y - nodes[v].y);
+            if (v !== id && total <= straight * GAP_MAX_BEND) gaps.push({ a: id, b: v, km: total, name, ref: from.ref, roads: next });
+          } else if (next.length < 2 && !touching.get(v)?.has(name)) walk(v, total, next);
+        }
+      };
+      walk(id, 0, []);
+    }
+  }
+  // 끝 하나는 한 번만 잇는다. 짧은 틈부터
+  gaps.sort((p, q) => p.km - q.km);
+  const used = new Set();
+  const out = roads.slice();
+  for (const g of gaps) {
+    const ka = `${g.name}:${g.a}`, kb = `${g.name}:${g.b}`;
+    if (used.has(ka) || used.has(kb) || piece(g.name, g.a) === piece(g.name, g.b)) continue;
+    used.add(ka);
+    used.add(kb);
+    parent.set(piece(g.name, g.a), piece(g.name, g.b));
+    for (const i of g.roads) out[i] = { ...roads[i], k: 'x', n: g.name, ref: g.ref, lock: null };
+  }
+  return out;
+}
+
 export class Network {
   constructor(data) {
     this.nodes = data.nodes.map((d, i) => new Node(i, d));
-    this.roads = data.roads.map((d, i) => new Road(i, d));
+    this.roads = bridgeHighwayGaps(data.nodes, data.roads).map((d, i) => new Road(i, d));
     this.edges = [];
     for (const r of this.roads) {
       const f = new Edge(this.edges.length, r, false); this.edges.push(f);

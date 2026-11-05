@@ -10,7 +10,7 @@ export const PALETTES = {
     sea: '#aed2ec', foreign: '#ebe5d5', land: '#f6f1e3', locked: '#ece6d6', border: 'rgba(90,80,60,0.09)',
     river: '#aed2ec', lake: '#aed2ec', urban: '#efe8d6',
     label: '#8a8476', labelStrong: '#55514a', halo: 'rgba(246,241,227,0.92)', seaLabel: '#7aa6c8',
-    xRoad: '#cdc6b4', nRoad: '#dad4c4', rRoad: '#e3ddce', closed: '#e3ddcd', plan: '#8e6fc9', ferry: '#7aa6c8', ferryOff: 'rgba(122,166,200,0.35)',
+    xRoad: '#cdc6b4', nRoad: '#dad4c4', rRoad: '#e3ddce', closed: '#e3ddcd', closedX: '#cfc8b6', plan: '#8e6fc9', ferry: '#7aa6c8', ferryOff: 'rgba(122,166,200,0.35)',
     laneMark: 'rgba(255,255,255,0.9)', center: '#b3ac9a', grass: '#d5e6c8', lot: '#e6e0d0', stallLine: '#fbf8ef',
     ink: '#2a2a28', station: '#ffffff', core: '#fbf8ef', mute: '#b9b3a3', crowd: 'rgba(42,42,40,0.3)',
   },
@@ -18,7 +18,7 @@ export const PALETTES = {
     sea: '#141d26', foreign: '#1d242b', land: '#262b30', locked: '#20252a', border: 'rgba(255,255,255,0.05)',
     river: '#141d26', lake: '#141d26', urban: '#2d3237',
     label: '#8d8f8c', labelStrong: '#cfcdc6', halo: 'rgba(38,43,48,0.92)', seaLabel: '#4f7390',
-    xRoad: '#4a4f54', nRoad: '#3d4247', rRoad: '#363b40', closed: '#2f3439', plan: '#a98be0', ferry: '#4f7390', ferryOff: 'rgba(79,115,144,0.35)',
+    xRoad: '#4a4f54', nRoad: '#3d4247', rRoad: '#363b40', closed: '#2f3439', closedX: '#40454a', plan: '#a98be0', ferry: '#4f7390', ferryOff: 'rgba(79,115,144,0.35)',
     laneMark: 'rgba(255,255,255,0.45)', center: '#6a6f73', grass: '#33483a', lot: '#32373c', stallLine: '#50555a',
     ink: '#f1eee6', station: '#262b30', core: '#262b30', mute: '#6d6a62', crowd: 'rgba(241,238,230,0.26)',
   },
@@ -464,10 +464,10 @@ export class Renderer {
       b.stroke(this.roadPath(r));
       b.setLineDash([]);
     }
-    // 잠긴 길
-    b.strokeStyle = pal.closed;
+    // 잠긴 길. 고속도로는 권역 경계에서 뚝 끊겨 보이지 않게 또렷하게 그린다
     for (const r of closed) {
-      b.lineWidth = (r.kind === 'x' ? 1.4 : 0.9) * px;
+      b.strokeStyle = r.kind === 'x' ? pal.closedX : pal.closed;
+      b.lineWidth = (r.kind === 'x' ? 1.8 : 0.9) * px;
       b.stroke(this.roadPath(r));
     }
     // 건설할 수 있는 도로는 터널처럼 점선으로

@@ -1093,6 +1093,12 @@ export class Game {
     return n;
   }
 
+  // 연구를 마친 차종 가운데 가장 많이 싣는 트럭
+  topModel() {
+    let best = 0;
+    TRUCKS.forEach((t, i) => { if (this.modelUnlocked(i) && t.cap > TRUCKS[best].cap) best = i; });
+    return best;
+  }
   modelUnlocked(modelIdx) {
     const t = TRUCKS[modelIdx].tech;
     return !t || this.techs.has(t);
@@ -1333,6 +1339,44 @@ export class Game {
     this.money -= c;
     this.net.setLanes(road, road.lanes + 1);
     return true;
+  }
+
+  // ── 고속도로 한꺼번에 넓히기 ──────────────────────
+  // 같은 이름으로 지금 열려 있는 고속도로
+  highwayRoads(road) {
+    if (road.kind !== 'x') return [];
+    return this.net.roads.filter((r) => r.kind === 'x' && r.name === road.name && r.open);
+  }
+  // 가장 좁은 구간보다 한 차로 넓은 폭으로 전 구간을 맞춘다. 이미 넓은 구간은 건너뛰고,
+  // 돈이 모자라면 고른 구간에서 가까운 곳부터 끊기지 않게 닿는 만큼만 산다
+  planHighway(road) {
+    const list = this.highwayRoads(road);
+    const plan = { target: 0, all: 0, n: 0, buy: [], cost: 0, full: 0, roads: list };
+    if (!list.length) return plan;
+    const target = Math.min(...list.map((r) => r.lanes)) + 1;
+    if (target > MAX_LANES.x) return plan;
+    plan.target = target;
+    const mid = (r) => [(r.bb[0] + r.bb[2]) / 2, (r.bb[1] + r.bb[3]) / 2];
+    const [cx, cy] = mid(road);
+    const away = (r) => { const [x, y] = mid(r); return Math.hypot(x - cx, y - cy); };
+    let left = this.money, stopped = false;
+    for (const r of list.filter((q) => q.lanes < target).sort((a, b) => away(a) - away(b))) {
+      const c = this.lanePrice(r);
+      plan.all++;
+      plan.full += c;
+      if (stopped || c > left) { stopped = true; continue; }
+      left -= c;
+      plan.cost += c;
+      plan.n++;
+      plan.buy.push(r);
+    }
+    return plan;
+  }
+  buyHighway(road) {
+    const plan = this.planHighway(road);
+    let n = 0;
+    for (const r of plan.buy) if (this.addLane(r)) n++;
+    return { n, cost: plan.cost, target: plan.target };
   }
 
   // 교차로 설치비는 어디에 몇 번을 놓아도 같다
